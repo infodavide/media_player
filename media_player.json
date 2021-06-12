@@ -1,0 +1,6 @@
+{
+    "tcp_port": 20060,
+    "log_level": "DEBUG",
+    "temp_dir": "/tmp/media_player",
+    "test_enabled": true
+}

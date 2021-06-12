@@ -1,0 +1,17 @@
+[Unit]
+Description=Media player discovery
+After=network.target network-online.target
+
+[Service]
+Type=simple
+User=mediaplayer
+Group=mediaplayer
+PIDFile=/opt/mediaplayer/discovery_service.pid
+WorkingDirectory=/opt/mediaplayer
+ExecStart=python3 /opt/mediaplayer/discovery_service.py &
+ExecStop=pkill -u mediaplayer -f '.*discovery_service\.py.*'
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
