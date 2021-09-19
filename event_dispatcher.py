@@ -171,19 +171,15 @@ class EventDispatcher(ControllerListener, InterfaceListener):
         self.logger.debug('Event received: %s', event)
         try:
             # Accumulate numeric values and set the new event with accumulated value as the pending one
-            numeric_data: int = -1
-            if isinstance(event.get_data(), int):
-                numeric_data = event.get_data()
-            elif isinstance(event.get_data(), str) and event.get_data().isnumeric():
-                numeric_data = int(event.get_data())
-            if event != self.__pending_event and numeric_data >= 0:
+            numeric_data: int = event.to_numeric()
+            if event != self.__pending_event and numeric_data and numeric_data >= 0:
                 self.logger.debug('Accumulating numeric value described by the event')
                 if self.__pending_event_task:
                     self.__pending_event_task.cancel()
                 if self.__pending_event is None:
                     self.__pending_event = event
                 else:
-                    self.__pending_event.set_data(int(str(self.__pending_event.get_data()) + str(numeric_data)))
+                    self.__pending_event.set_data(self.__pending_event.get_data() * 10 + numeric_data)
                 self.__pending_event_task = threading.Timer(3, self.on_control_event, [self.__pending_event])
                 self.__pending_event_task.start()
                 return bytes()
@@ -211,7 +207,7 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                     self.logger.debug('Closing source: %s', self.__source.get_name())
                     self.__source.close()
                     self.__source = None
-                if 0 <= numeric_data < len(available_sources):
+                if numeric_data and 0 <= numeric_data < len(available_sources):
                     self.__source = available_sources[int(event.get_data())]
                     self.logger.debug('Opening source: %s', self.__source.get_name())
                     if self.__interface:

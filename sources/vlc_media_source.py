@@ -4,12 +4,13 @@ import logging
 import os
 import sys
 import traceback
-import vlc
-import media_api
-
 from abc import ABC
-from media_player_config import MediaPlayerConfig
+
+import vlc
+
+import media_api
 from media_api import RemoteControlEvent, MediaSource, MediaPlayerInterface, Media
+from media_player_config import MediaPlayerConfig
 
 
 class VlcMediaSource(MediaSource, ABC):
@@ -88,45 +89,81 @@ class VlcMediaSource(MediaSource, ABC):
         if self.is_open():
             self.close()
 
+    def _play_media(self, media: Media = None, channel: int = -1):
+        if channel >= 0:
+            for item in self._media_list:
+                if item.get_channel() == channel:
+                    media = item
+                    break
+        if media:
+            self._media = media
+            vlc_media: vlc.Media = self._instance.media_new(media.get_stream_url())
+            self._interface.set_playing(True)
+            self.logger.info('Playing media: %s', media.get_name())
+            self._interface.display_notice('Playing media: ' + media.get_name())
+            self._player.set_xwindow(self._interface.get_window_id())
+            self._player.set_media(vlc_media)
+            self._player.play()
+            self.logger.info('Playing')
+        else:
+            self.logger.warning('Media not available')
+            self._interface.display_warning('Media not available')
+
     def on_control_event(self, event: RemoteControlEvent) -> bytes:
         """
         Receive an event from remote control.
         :return: True if processed.
         """
         self.logger.debug('Event received: %s', event)
+        numeric_data: int = event.to_numeric()
         if event.get_code() == media_api.CODE_BACK:
             if self._player and self._player.is_playing():
                 self.logger.debug('Stopping player')
                 self._player.stop()
                 self._interface.set_playing(False)
+        elif event.get_code() == media_api.CODE_VOL_UP:
+            if self._player:
+                current_volume: int = self._player.audio_get_volume()
+                if current_volume < 100:
+                    self._player.audio_set_mute(False)
+                    self._player.audio_set_volume(current_volume + 1)
+                self._interface.display_notice('Volume: %s' % self._player.audio_get_volume())
+        elif event.get_code() == media_api.CODE_VOL_DOWN:
+            if self._player:
+                current_volume: int = self._player.audio_get_volume()
+                if current_volume > 0:
+                    self._player.audio_set_volume(current_volume - 1)
+                if self._player.audio_get_volume() <= 0:
+                    self._player.audio_set_mute(True)
+                self._interface.display_notice('Volume: %s' % self._player.audio_get_volume())
+        elif event.get_code() == media_api.CODE_CH_UP:
+            if self._player:
+                if self._media:
+                    self._play_media(media=self._media, channel=self._media.get_channel() + 1)
+                else:
+                    self._play_media(channel=1)
+            else:
+                self.logger.warning('Source not opened')
+                self._interface.display_warning('Source not opened')
+        elif event.get_code() == media_api.CODE_CH_DOWN:
+            if self._player:
+                if self._media:
+                    self._play_media(media=self._media, channel=self._media.get_channel() - 1)
+                else:
+                    self._play_media(channel=1)
+            else:
+                self.logger.warning('Source not opened')
+                self._interface.display_warning('Source not opened')
+        elif event.get_code() == media_api.CODE_VOL and event.get_data():
+            if self._player and numeric_data and numeric_data >= 0:
+                self._player.audio_set_volume(numeric_data)
         elif event.get_code() == media_api.CODE_CH and event.get_data():
             if self._player:
-                if self._player.is_playing():
-                    self.logger.debug('Stopping player')
-                    self._player.stop()
-                    self._interface.set_playing(False)
-                # noinspection PyTypeChecker
-                media: Media = None
+                self._player.audio_set_mute(False)
                 if isinstance(event.get_data(), Media):
-                    media = event.get_data()
-                elif isinstance(event.get_data(), str) and event.get_data().isnumeric():
-                    channel: int = int(event.get_data())
-                    for item in self._media_list:
-                        if item.get_channel() == channel:
-                            media = item
-                if media:
-                    self._media = media
-                    vlc_media: vlc.Media = self._instance.media_new(media.get_stream_url())
-                    self._interface.set_playing(True)
-                    self.logger.info('Playing media: %s', media.get_name())
-                    self._interface.display_notice('Playing media: ' + media.get_name())
-                    self._player.set_xwindow(self._interface.get_window_id())
-                    self._player.set_media(vlc_media)
-                    self._player.play()
-                    self.logger.info('Player stopped')
-                else:
-                    self.logger.warning('Media not available')
-                    self._interface.display_warning('Media not available')
+                    self._play_media(media=event.get_data())
+                elif numeric_data:
+                    self._play_media(media=self._media, channel=numeric_data)
             else:
                 self.logger.warning('Source not opened')
                 self._interface.display_warning('Source not opened')

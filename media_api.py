@@ -4,7 +4,7 @@ import atexit
 import logging
 import signal
 from abc import ABC, abstractmethod
-from typing import List, Any, Callable
+from typing import List, Any, Callable, Type
 from media_player_config import MediaPlayerConfig
 from canvas_grid import CanvasGridRenderer
 from PIL import Image
@@ -44,6 +44,7 @@ class RemoteControlEvent(object):
     def __init__(self, code: int, data: Any = None):
         self.__code: int = code
         self.__data: Any = data
+        self.__data_type: Type = None
 
     def get_code(self) -> int:
         return self.__code
@@ -51,11 +52,28 @@ class RemoteControlEvent(object):
     def get_data(self) -> Any:
         return self.__data
 
+    def get_data_type(self) -> Type:
+        return self.__data_type
+
+    def is_numeric_data(self) -> Any:
+        return self.__data_type == int
+
+    def is_textual_data(self) -> Any:
+        return self.__data_type == str
+
     def set_code(self, code: int) -> None:
         self.__code = code
 
     def set_data(self, value: Any) -> None:
         self.__data = value
+        self.__data_type = type(value)
+
+    def to_numeric(self) -> int:
+        if self.is_numeric_data():
+            return self.get_data()
+        elif isinstance(self.get_data(), str) and self.get_data().isnumeric():
+            return int(self.get_data())
+        return None
 
     def __str__(self):
         return super().__str__() + ',' + str(self.__code) + ':' + str(self.__data)

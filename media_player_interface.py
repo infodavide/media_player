@@ -74,8 +74,8 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__window.bind('<Control-KP_Subtract>', lambda e: self._on_key(RemoteControlEvent(media_api.CODE_CH_DOWN), e))
         for k in range(10):
             v: str = str(k)
-            self.__window.bind('<KP_%s>' % v, lambda e, data=v: self._on_key(RemoteControlEvent(code=media_api.CODE_VOL, data=data), e))
-            self.__window.bind('<Control-KP_%s>' % v, lambda e, data=v: self._on_key(RemoteControlEvent(code=media_api.CODE_CH, data=data), e))
+            self.__window.bind('<KP_%s>' % v, lambda e, data=v: self._on_key(RemoteControlEvent(code=media_api.CODE_CH, data=data), e))
+            self.__window.bind('<Control-KP_%s>' % v, lambda e, data=v: self._on_key(RemoteControlEvent(code=media_api.CODE_VOL, data=data), e))
         self.__window.attributes('-topmost', True)
         self.__window.attributes('-' + _FULLSCREEN, self.__full_screen_state)
         self.__window.minsize(1027, 768)
