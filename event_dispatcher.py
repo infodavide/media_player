@@ -142,9 +142,9 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                 media: Media = value
                 text: str = media.get_name()
                 if media.get_title():
-                    text = text + '\n' + media.get_title()
+                    text = text + ' - ' + media.get_title()
                 if media.get_duration() and media.get_duration() > 0:
-                    text = text + '\nDuration: ' + "{:0>8}".format(
+                    text = text + ' - ' + "{:0>8}".format(
                         str(datetime.timedelta(seconds=media.get_duration())))
                 self.__interface.display_notice(text)
 

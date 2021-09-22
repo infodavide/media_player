@@ -103,6 +103,7 @@ class VlcMediaSource(MediaSource, ABC):
             self._interface.display_notice('Playing media: ' + media.get_name())
             self._player.set_xwindow(self._interface.get_window_id())
             self._player.set_media(vlc_media)
+            self._player.set_video_title_display(0, 5000)
             self._player.play()
             self.logger.info('Playing')
         else:
@@ -116,7 +117,7 @@ class VlcMediaSource(MediaSource, ABC):
         """
         self.logger.debug('Event received: %s', event)
         numeric_data: int = event.to_numeric()
-        if event.get_code() == media_api.CODE_BACK:
+        if event.get_code() == media_api.CODE_BACK or event.get_code() == media_api.CODE_STOP:
             if self._player and self._player.is_playing():
                 self.logger.debug('Stopping player')
                 self._player.stop()
@@ -136,7 +137,7 @@ class VlcMediaSource(MediaSource, ABC):
                 if self._player.audio_get_volume() <= 0:
                     self._player.audio_set_mute(True)
                 self._interface.display_notice('Volume: %s' % self._player.audio_get_volume())
-        elif event.get_code() == media_api.CODE_CH_UP:
+        elif event.get_code() == media_api.CODE_CH_UP or event.get_code() == media_api.CODE_NEXT:
             if self._player:
                 if self._media:
                     self._play_media(media=self._media, channel=self._media.get_channel() + 1)
@@ -145,7 +146,7 @@ class VlcMediaSource(MediaSource, ABC):
             else:
                 self.logger.warning('Source not opened')
                 self._interface.display_warning('Source not opened')
-        elif event.get_code() == media_api.CODE_CH_DOWN:
+        elif event.get_code() == media_api.CODE_CH_DOWN or event.get_code() == media_api.CODE_PREVIOUS:
             if self._player:
                 if self._media:
                     self._play_media(media=self._media, channel=self._media.get_channel() - 1)
@@ -157,6 +158,12 @@ class VlcMediaSource(MediaSource, ABC):
         elif event.get_code() == media_api.CODE_VOL and event.get_data():
             if self._player and numeric_data and numeric_data >= 0:
                 self._player.audio_set_volume(numeric_data)
+        elif event.get_code() == media_api.CODE_PLAY:
+            if self._player:
+                if self._player.is_playing():
+                    self._player.pause()
+                elif self._media:
+                    self._player.play()
         elif event.get_code() == media_api.CODE_CH and event.get_data():
             if self._player:
                 self._player.audio_set_mute(False)

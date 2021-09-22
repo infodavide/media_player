@@ -2,6 +2,8 @@
 # Media player screen
 import io
 import logging
+import tkinter
+
 import media_api
 import os
 import pyautogui
@@ -108,7 +110,21 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             listener.on_control_event(control_event)
 
     def get_window_id(self) -> int:
-        return self.__window.winfo_id()
+        return self.__center_cnv.winfo_id()
+
+    def __set_grid_visible(self, flag: bool):
+        if flag:
+            for k in self.__center_cnv.find_all():
+                try:
+                    self.__center_cnv.itemconfigure(k, state='normal')
+                except tkinter.TclError as ex:
+                    self.logger.error('Id not found: %s' % ex)
+        else:
+            for k in self.__center_cnv.find_all():
+                try:
+                    self.__center_cnv.itemconfigure(k, state='hidden')
+                except tkinter.TclError as ex:
+                    self.logger.error('Id not found: %s' % ex)
 
     def get_x(self) -> int:
         if self.__window:
@@ -208,6 +224,7 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
 
     def set_playing(self, flag: bool):
         self.__playing = flag
+        self.__set_grid_visible(not flag)
         self.logger.debug('Setting playing mode: %s', flag)
 
     def refresh(self) -> None:
@@ -245,12 +262,10 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             return
         if text:
             MediaPlayerInterfaceImpl.logger.debug('Displaying text at bottom: %s', text)
-            while text.count('\n') < 2:
-                text = text + '\n'
             self.__bottom_lbl['text'] = text
         else:
             MediaPlayerInterfaceImpl.logger.debug('Displaying empty text at bottom')
-            self.__bottom_lbl['text'] = '\n\n'
+            self.__bottom_lbl['text'] = ''
         if color:
             self.__bottom_lbl.configure(foreground=color)
 
