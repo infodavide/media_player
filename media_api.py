@@ -44,6 +44,7 @@ class RemoteControlEvent(object):
     def __init__(self, code: int, data: Any = None):
         self.__code: int = code
         self.__data: Any = data
+        # noinspection PyTypeChecker
         self.__data_type: Type = None
 
     def get_code(self) -> int:
@@ -436,7 +437,7 @@ class MediaPlayerInterface(ControllerListener):
 
 
 class MediaSource(ControllerListener):
-    logger: logging.Logger = None
+    __logger: logging.Logger = None
 
     def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface):
         """
@@ -444,12 +445,12 @@ class MediaSource(ControllerListener):
         :param parent_logger: the logger
         :param config: the configuration
         """
-        if not self.__class__.logger:
-            self.__class__.logger = logging.getLogger(self.__class__.__name__)
+        if not MediaSource.__logger:
+            MediaSource.__logger = logging.getLogger(self.__class__.__name__)
             for handler in parent_logger.handlers:
-                self.__class__.logger.addHandler(handler)
-            self.__class__.logger.setLevel(parent_logger.level)
-        self.__class__.logger.info('Initializing %s', self.__class__.__name__)
+                MediaSource.__logger.addHandler(handler)
+            MediaSource.__logger.setLevel(parent_logger.level)
+        MediaSource.__logger.info('Initializing %s', self.__class__.__name__)
         self._config: MediaPlayerConfig = config
         self._interface: MediaPlayerInterface = interface
         # noinspection PyTypeChecker

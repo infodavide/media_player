@@ -14,15 +14,15 @@ from media_player_config import MediaPlayerConfig
 
 
 class VlcMediaSource(MediaSource, ABC):
-    logger: logging.Logger = None
+    __logger: logging.Logger = None
 
     def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface):
         super().__init__(parent_logger, config, interface)
-        if not self.__class__.logger:
-            self.__class__.logger = logging.getLogger(self.__class__.__name__)
+        if not VlcMediaSource.__logger:
+            VlcMediaSource.__logger = logging.getLogger(self.__class__.__name__)
             for handler in parent_logger.handlers:
-                self.__class__.logger.addHandler(handler)
-            self.__class__.logger.setLevel(parent_logger.level)
+                VlcMediaSource.__logger.addHandler(handler)
+            VlcMediaSource.__logger.setLevel(parent_logger.level)
         # noinspection PyTypeChecker
         self._instance: vlc.Instance = None
         # noinspection PyTypeChecker
@@ -37,7 +37,7 @@ class VlcMediaSource(MediaSource, ABC):
         :return: None.
         """
         super().open()
-        self.logger.debug("Starting VLC or using the existing one")
+        VlcMediaSource.__logger.debug("Starting VLC or using the existing one")
         try:
             if self._instance:
                 self._instance.release()
@@ -49,10 +49,10 @@ class VlcMediaSource(MediaSource, ABC):
             self._player = self._instance.media_player_new()
             self._player.set_fullscreen(True)
         except Exception as ex:
-            self.logger.warning("An error occurred while starting VLC")
+            VlcMediaSource.__logger.warning("An error occurred while starting VLC")
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
-            self.logger.error(ex)
+            VlcMediaSource.__logger.error(ex)
             self._interface.display_error("An error occurred: " + repr(ex))
 
     def close(self) -> None:
@@ -61,7 +61,7 @@ class VlcMediaSource(MediaSource, ABC):
         :return: None.
         """
         super().close()
-        self.logger.debug("Closing VLC")
+        VlcMediaSource.__logger.debug("Closing VLC")
         try:
             if self._player:
                 if self._player.is_playing():
@@ -71,12 +71,12 @@ class VlcMediaSource(MediaSource, ABC):
             if self._instance:
                 self._instance.release()
                 self._instance = None
-            self.logger.info("VLC successfully closed")
+            VlcMediaSource.__logger.info("VLC successfully closed")
         except Exception as ex:
-            self.logger.warning("An error occurred while closing VLC")
+            VlcMediaSource.__logger.warning("An error occurred while closing VLC")
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
-            self.logger.error(ex)
+            VlcMediaSource.__logger.error(ex)
             self._interface.display_error("An error occurred: " + repr(ex))
 
     def is_open(self) -> bool:
@@ -99,15 +99,15 @@ class VlcMediaSource(MediaSource, ABC):
             self._media = media
             vlc_media: vlc.Media = self._instance.media_new(media.get_stream_url())
             self._interface.set_playing(True)
-            self.logger.info('Playing media: %s', media.get_name())
+            VlcMediaSource.__logger.info('Playing media: %s', media.get_name())
             self._interface.display_notice('Playing media: ' + media.get_name())
             self._player.set_xwindow(self._interface.get_window_id())
             self._player.set_media(vlc_media)
             self._player.set_video_title_display(0, 5000)
             self._player.play()
-            self.logger.info('Playing')
+            VlcMediaSource.__logger.info('Playing')
         else:
-            self.logger.warning('Media not available')
+            VlcMediaSource.__logger.warning('Media not available')
             self._interface.display_warning('Media not available')
 
     def on_control_event(self, event: RemoteControlEvent) -> bytes:
@@ -115,11 +115,11 @@ class VlcMediaSource(MediaSource, ABC):
         Receive an event from remote control.
         :return: True if processed.
         """
-        self.logger.debug('Event received: %s', event)
+        VlcMediaSource.__logger.debug('Event received: %s', event)
         numeric_data: int = event.to_numeric()
         if event.get_code() == media_api.CODE_BACK or event.get_code() == media_api.CODE_STOP:
             if self._player and self._player.is_playing():
-                self.logger.debug('Stopping player')
+                VlcMediaSource.__logger.debug('Stopping player')
                 self._player.stop()
                 self._interface.set_playing(False)
         elif event.get_code() == media_api.CODE_VOL_UP:
@@ -144,7 +144,7 @@ class VlcMediaSource(MediaSource, ABC):
                 else:
                     self._play_media(channel=1)
             else:
-                self.logger.warning('Source not opened')
+                VlcMediaSource.__logger.warning('Source not opened')
                 self._interface.display_warning('Source not opened')
         elif event.get_code() == media_api.CODE_CH_DOWN or event.get_code() == media_api.CODE_PREVIOUS:
             if self._player:
@@ -153,7 +153,7 @@ class VlcMediaSource(MediaSource, ABC):
                 else:
                     self._play_media(channel=1)
             else:
-                self.logger.warning('Source not opened')
+                VlcMediaSource.__logger.warning('Source not opened')
                 self._interface.display_warning('Source not opened')
         elif event.get_code() == media_api.CODE_VOL and event.get_data():
             if self._player and numeric_data and numeric_data >= 0:
@@ -172,8 +172,8 @@ class VlcMediaSource(MediaSource, ABC):
                 elif numeric_data:
                     self._play_media(media=self._media, channel=numeric_data)
             else:
-                self.logger.warning('Source not opened')
+                VlcMediaSource.__logger.warning('Source not opened')
                 self._interface.display_warning('Source not opened')
         else:
-            self.logger.debug('Event ignored')
+            VlcMediaSource.__logger.debug('Event ignored')
         return media_api.RESPONSE_ACK

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 import traceback
 import urllib.parse
@@ -40,11 +41,17 @@ os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
 os.environ["OPENCV_LOG_LEVEL"] = "WARN"
 
 
-class MediaCellRenderer(CanvasGridRenderer):
-    def __init__(self, logger: logging.Logger, config: MediaPlayerConfig):
-        super().__init__()
+class FreeboxMediaCellRenderer(CanvasGridRenderer):
+    __logger: logging.Logger = None
+
+    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig):
+        super().__init__(parent_logger)
+        if not FreeboxMediaCellRenderer.__logger:
+            FreeboxMediaCellRenderer.__logger = logging.getLogger(self.__class__.__name__)
+            for handler in parent_logger.handlers:
+                FreeboxMediaCellRenderer.__logger.addHandler(handler)
+            FreeboxMediaCellRenderer.__logger.setLevel(parent_logger.level)
         self.__config: MediaPlayerConfig = config
-        self.__logger: logging.Logger = logger
         self.__enabled: bool = True
         cv2.setLogLevel(0)
 
@@ -68,7 +75,7 @@ class MediaCellRenderer(CanvasGridRenderer):
                 url = url.replace('flavour=hd', 'flavour=sd')
             while colors < _THUMBNAIL_MIN_COLORS and tries < _THUMBNAIL_TRIES:
                 tries = tries + 1
-                self.__logger.info('Loading (try: %s) image of media from: %s', tries, url)
+                FreeboxMediaCellRenderer.__logger.info('Loading (try: %s) image of media from: %s', tries, url)
                 cap = cv2.VideoCapture(url)
                 # noinspection PyBroadException
                 try:
@@ -90,7 +97,7 @@ class MediaCellRenderer(CanvasGridRenderer):
                 except:  # catch all
                     time.sleep(0.2)
                     if tries >= _THUMBNAIL_TRIES:
-                        self.__logger.warning('Unexpected error: %s', sys.exc_info()[0])
+                        FreeboxMediaCellRenderer.__logger.warning('Unexpected error: %s', sys.exc_info()[0])
                 finally:
                     if cap:
                         cap.release()
@@ -98,7 +105,7 @@ class MediaCellRenderer(CanvasGridRenderer):
                 if media.get_image():
                     result = media.get_image()
                 elif media.get_image_url():
-                    self.__logger.debug('Loading media image from: %s', media.get_image_url())
+                    FreeboxMediaCellRenderer.__logger.debug('Loading media image from: %s', media.get_image_url())
                     # noinspection PyTypeChecker
                     binary_response: requests.Response = None
                     # noinspection PyBroadException
@@ -107,13 +114,13 @@ class MediaCellRenderer(CanvasGridRenderer):
                         media.set_image(Image.open(binary_response.raw))
                         result = media.get_image()
                     except:  # catch all
-                        self.__logger.error(traceback.format_exc())
+                        FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
                     finally:
                         if binary_response:
                             binary_response.close()
             else:
                 url: str = _FREEBOX_CHANNEL_DESCRIPTION_PATTTERN % (media.get_stream_id(), str(int(time.time())))
-                self.__logger.debug('Loading media title from: %s', url)
+                FreeboxMediaCellRenderer.__logger.debug('Loading media title from: %s', url)
                 # noinspection PyBroadException
                 try:
                     with urllib.request.urlopen(url) as json_response:
@@ -125,7 +132,7 @@ class MediaCellRenderer(CanvasGridRenderer):
                                     media.set_duration(v['duration'])
                                 break
                 except:  # catch all
-                    self.__logger.error(traceback.format_exc())
+                    FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
                     # noinspection PyTypeChecker
                     media.set_title(None)
                     # noinspection PyTypeChecker
@@ -135,22 +142,25 @@ class MediaCellRenderer(CanvasGridRenderer):
 
 
 class FreeboxMediaSource(VlcMediaSource):
-    logger: logging.Logger = None
+    __logger: logging.Logger = None
 
     def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface):
         super().__init__(parent_logger, config, interface)
-        if not self.__class__.logger:
-            self.__class__.logger = logging.getLogger(self.__class__.__name__)
+        if not FreeboxMediaSource.__logger:
+            FreeboxMediaSource.__logger = logging.getLogger(self.__class__.__name__)
             for handler in parent_logger.handlers:
-                self.__class__.logger.addHandler(handler)
-            self.__class__.logger.setLevel(parent_logger.level)
+                FreeboxMediaSource.__logger.addHandler(handler)
+            FreeboxMediaSource.__logger.setLevel(parent_logger.level)
         # noinspection PyTypeChecker
         self.__last_retrieval: datetime.datetime = None
         # noinspection PyTypeChecker
         self.__freebox_config: Dict[str, Any] = None
+        self.__refresh_interface_delay: int = 30
         # Tasks
         # noinspection PyTypeChecker
-        self.__media_cell_renderer: MediaCellRenderer = MediaCellRenderer(self.logger, config)
+        self.__refresh_interface_task: threading.Timer = None
+        # noinspection PyTypeChecker
+        self.__media_cell_renderer: FreeboxMediaCellRenderer = FreeboxMediaCellRenderer(parent_logger, config)
 
     def get_name(self) -> str:
         """
@@ -161,6 +171,16 @@ class FreeboxMediaSource(VlcMediaSource):
 
     def get_image_path(self) -> str:
         return 'sources' + os.sep + 'images' + os.sep + 'freebox.jpg'
+
+    def refresh_interface(self) -> None:
+        delay: int = self.__refresh_interface_delay
+        if self.is_playing():
+            delay = 60
+        elif self._interface:
+            self._interface.refresh()
+        if self._interface and delay > 0:
+            self.__refresh_interface_task = threading.Timer(delay, self.refresh_interface)
+            self.__refresh_interface_task.start()
 
     def open(self) -> None:
         super().open()
@@ -178,9 +198,15 @@ class FreeboxMediaSource(VlcMediaSource):
             position = position + 1
         self.__media_cell_renderer.set_enabled(True)
 
+    def close(self) -> None:
+        if self.__refresh_interface_task:
+            self.__refresh_interface_task.cancel()
+            self.__refresh_interface_task = None
+        super().close()
+
     def __load_freebox_config(self) -> None:
         path: str = self.get_config().get_root_path() + os.sep + 'freebox_media_source.json'
-        self.logger.info('Loading configuration from: %s', path)
+        FreeboxMediaSource.__logger.info('Loading configuration from: %s', path)
         if os.path.exists(path):
             with open(path, 'r') as fp:
                 self.__freebox_config = json.load(fp)
@@ -190,7 +216,7 @@ class FreeboxMediaSource(VlcMediaSource):
             self.__freebox_config = dict()
         if 'filters' not in self.__freebox_config:
             self.__freebox_config['filters'] = list()
-        self.logger.info(str(len(self.__freebox_config['filters'])) + ' filters loaded')
+        FreeboxMediaSource.__logger.info(str(len(self.__freebox_config['filters'])) + ' filters loaded')
 
     def __build_media_list(self) -> None:
         """
@@ -203,7 +229,7 @@ class FreeboxMediaSource(VlcMediaSource):
         if self.__last_retrieval:
             expiration = self.__last_retrieval + datetime.timedelta(minutes=5)
         if expiration is None or expiration < now:
-            self.logger.debug('Retrieving media list from: %s', _FREEBOX_STREAMS)
+            FreeboxMediaSource.__logger.debug('Retrieving media list from: %s', _FREEBOX_STREAMS)
             media_list: dict = dict()
             with urllib.request.urlopen(_FREEBOX_CHANNELS) as response:
                 data = json.loads(response.read().decode(_UTF8))['result']
@@ -237,7 +263,7 @@ class FreeboxMediaSource(VlcMediaSource):
                             media: Media = media_list[name]
                             media.set_channel(position)
                             if media.get_stream_id() is None:
-                                self.logger.debug('Adding media to the list: %s', media)
+                                FreeboxMediaSource.__logger.debug('Adding media to the list: %s', media)
                                 if position >= len(self._media_list):
                                     self._media_list.append(media)
                                 else:

@@ -100,7 +100,7 @@ class _TcpServer(socketserver.TCPServer):
 
 
 class MediaPlayerTcpController(MediaPlayerController):
-    logger: logging.Logger = None
+    __logger: logging.Logger = None
 
     def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, listener: ControllerListener):
         """
@@ -109,12 +109,12 @@ class MediaPlayerTcpController(MediaPlayerController):
         :param config: the configuration object
         """
         super().__init__(config, listener)
-        if not MediaPlayerTcpController.logger:
-            MediaPlayerTcpController.logger = logging.getLogger(self.__class__.__name__)
+        if not MediaPlayerTcpController.__logger:
+            MediaPlayerTcpController.__logger = logging.getLogger(self.__class__.__name__)
             for handler in parent_logger.handlers:
-                MediaPlayerTcpController.logger.addHandler(handler)
-            MediaPlayerTcpController.logger.setLevel(parent_logger.level)
-        MediaPlayerTcpController.logger.info('Initializing %s', self.__class__.__name__)
+                MediaPlayerTcpController.__logger.addHandler(handler)
+            MediaPlayerTcpController.__logger.setLevel(parent_logger.level)
+        MediaPlayerTcpController.__logger.info('Initializing %s', self.__class__.__name__)
         # Status flags
         self.__active: bool = False
         self.__shutdown_request = False
@@ -132,22 +132,22 @@ class MediaPlayerTcpController(MediaPlayerController):
         self.__server: _TcpServer = None
 
     def __main(self):
-        MediaPlayerTcpController.logger.info('Starting on port: %s', self._config.get_tcp_port())
+        MediaPlayerTcpController.__logger.info('Starting on port: %s', self._config.get_tcp_port())
         try:
-            with _TcpServer(('0.0.0.0', self._config.get_tcp_port()), self, MediaPlayerTcpController.logger) as server:
+            with _TcpServer(('0.0.0.0', self._config.get_tcp_port()), self, MediaPlayerTcpController.__logger) as server:
                 self.__active = True
                 self.__server = server
                 while self.__active:
                     server.handle_request()
         except TypeError as ex:
-            MediaPlayerTcpController.logger.error('Error: %s' % ex)
+            MediaPlayerTcpController.__logger.error('Error: %s' % ex)
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
-            MediaPlayerTcpController.logger.error(ex)
+            MediaPlayerTcpController.__logger.error(ex)
         finally:
             self.__server = None
             self.__active = False
-            MediaPlayerTcpController.logger.info('Stopped')
+            MediaPlayerTcpController.__logger.info('Stopped')
 
     def is_running(self) -> bool:
         return self.__active
@@ -157,19 +157,19 @@ class MediaPlayerTcpController(MediaPlayerController):
             if self.__active:
                 return
         with self.__start_lock:
-            MediaPlayerTcpController.logger.debug('Starting...')
+            MediaPlayerTcpController.__logger.debug('Starting...')
             self.__active = True
             self.__shutdown_request = False
             self.__main_task = threading.Timer(1, self.__main)
             self.__main_task.start()
-            MediaPlayerTcpController.logger.debug('Started (%s)', self.__active)
+            MediaPlayerTcpController.__logger.debug('Started (%s)', self.__active)
 
     def stop(self) -> None:
         with self.__lock:
             if not self.__active:
                 return
         with self.__stop_lock:
-            MediaPlayerTcpController.logger.debug('Stopping...')
+            MediaPlayerTcpController.__logger.debug('Stopping...')
             self.__active = False
             self.__shutdown_request = True
             try:
@@ -177,10 +177,10 @@ class MediaPlayerTcpController(MediaPlayerController):
                     self.__server.server_close()
                 self.__main_task = None
             except Exception as ex:
-                MediaPlayerTcpController.logger.error('Cannot stop main task: %s' % ex)
+                MediaPlayerTcpController.__logger.error('Cannot stop main task: %s' % ex)
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
-                MediaPlayerTcpController.logger.error(ex)
+                MediaPlayerTcpController.__logger.error(ex)
             finally:
                 if self._listener:
                     self._listener.on_stop()
