@@ -3,7 +3,6 @@
 import io
 import logging
 import tkinter
-
 import media_api
 import os
 import pyautogui
@@ -11,8 +10,12 @@ import screeninfo
 import sys
 import threading
 import time
-import tkinter as tk
 import traceback
+
+if sys.version_info.major == 3:
+    import tkinter as tk, tkinter.font as tkf
+else:
+    import Tkinter as tk, tkFont as tkf
 
 from typing import Any, List
 from media_player_config import MediaPlayerConfig
@@ -83,17 +86,22 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__window.minsize(1027, 768)
         w, h = self.__window.winfo_screenwidth(), self.__window.winfo_screenheight()
         MediaPlayerInterfaceImpl.__logger.info('Screen size: %sx%s', w, h)
+        fonts = list(tkf.families())
+        fonts.sort()
+        for f in fonts:
+            print(f)
+        self.__default_font_name: str = 'Courier'
         self.__top_lbl = tk.Label(self.__window, text="Ready", bg="black", fg="white")
-        self.__top_lbl.config(font=("Courier", 22))
-        self.__top_lbl.pack(fill=tk.X, ipadx=10, padx=10, side=tk.TOP)
+        self.__top_lbl.config(font=(self.__default_font_name, 22))
+        self.__top_lbl.pack(fill=tk.X, ipadx=4, padx=4, side=tk.TOP)
         self.__center_cnv = tk.Canvas(self.__window, bg="black", height=h - 110, width=w, borderwidth=0, highlightthickness=0)
         self.__center_cnv.pack(fill=tk.X, expand=tk.TRUE)
         self.__bottom_lbl = tk.Label(self.__window, text="Ready\n\n", bg="black", fg="orange", justify=tk.LEFT)
-        self.__bottom_lbl.config(font=("Courier", 16))
-        self.__bottom_lbl.pack(ipadx=5, padx=5, anchor=tk.S, side=tk.LEFT)
+        self.__bottom_lbl.config(font=(self.__default_font_name, 16))
+        self.__bottom_lbl.pack(ipadx=4, padx=4, anchor=tk.S, side=tk.LEFT)
         self.__clock = TkClock(self.__window)
-        self.__clock.config(font=("Courier", 16), bg="black", fg="orange")
-        self.__clock.pack(ipadx=5, padx=5)
+        self.__clock.config(font=(self.__default_font_name, 16), bg="black", fg="orange")
+        self.__clock.pack(ipadx=4, padx=4)
         with open(self._config.get_root_path() + os.sep + 'images' + os.sep + 'background.jpg', 'rb') as fp:
             image: Image = Image.open(io.BytesIO(fp.read()))
         image = image.resize((self.__center_cnv.winfo_width(), self.__center_cnv.winfo_height()), Image.ANTIALIAS)

@@ -62,45 +62,46 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
         return self.__enabled
 
     def render_image(self, value: Any) -> Image:
-        if not isinstance(value, Media) or not self.__enabled:
+        if not isinstance(value, Media):
             return None
         media: Media = value
         if media.get_stream_url():
-            colors: int = 0
             # noinspection PyTypeChecker
             result: Image = None
-            tries = 0
             url: str = media.get_stream_url()
             if 'flavour=' in url:
                 url = url.replace('flavour=hd', 'flavour=sd')
-            while colors < _THUMBNAIL_MIN_COLORS and tries < _THUMBNAIL_TRIES:
-                tries = tries + 1
-                FreeboxMediaCellRenderer.__logger.info('Loading (try: %s) image of media from: %s', tries, url)
-                cap = cv2.VideoCapture(url)
-                # noinspection PyBroadException
-                try:
-                    ret, frame = cap.read()
-                    image: Image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    image_w, image_h = image.size
-                    if image_w > 512 and image_h > 512:
-                        image.thumbnail((512, 512), Image.ANTIALIAS)
-                    by_color = {}
-                    colors = 0
-                    for pixel in image.getdata():
-                        if pixel not in by_color:
-                            by_color[pixel] = True
-                            colors = colors + 1
-                        if colors >= _THUMBNAIL_MIN_COLORS:
-                            result = image
-                            break
-                    time.sleep(0.1)
-                except:  # catch all
-                    time.sleep(0.2)
-                    if tries >= _THUMBNAIL_TRIES:
-                        FreeboxMediaCellRenderer.__logger.warning('Unexpected error: %s', sys.exc_info()[0])
-                finally:
-                    if cap:
-                        cap.release()
+            if self.__enabled:
+                colors: int = 0
+                tries = 0
+                while colors < _THUMBNAIL_MIN_COLORS and tries < _THUMBNAIL_TRIES:
+                    tries = tries + 1
+                    FreeboxMediaCellRenderer.__logger.info('Loading (try: %s) image of media from: %s', tries, url)
+                    cap = cv2.VideoCapture(url)
+                    # noinspection PyBroadException
+                    try:
+                        ret, frame = cap.read()
+                        image: Image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                        image_w, image_h = image.size
+                        if image_w > 512 and image_h > 512:
+                            image.thumbnail((512, 512), Image.ANTIALIAS)
+                        by_color = {}
+                        colors = 0
+                        for pixel in image.getdata():
+                            if pixel not in by_color:
+                                by_color[pixel] = True
+                                colors = colors + 1
+                            if colors >= _THUMBNAIL_MIN_COLORS:
+                                result = image
+                                break
+                        time.sleep(0.1)
+                    except:  # catch all
+                        time.sleep(0.2)
+                        if tries >= _THUMBNAIL_TRIES:
+                            FreeboxMediaCellRenderer.__logger.warning('Unexpected error: %s', sys.exc_info()[0])
+                    finally:
+                        if cap:
+                            cap.release()
             if result is None:
                 if media.get_image():
                     result = media.get_image()
@@ -177,6 +178,7 @@ class FreeboxMediaSource(VlcMediaSource):
         if self.is_playing():
             delay = 60
         elif self._interface:
+            self.__media_cell_renderer.set_enabled(True)
             self._interface.refresh()
         if self._interface and delay > 0:
             self.__refresh_interface_task = threading.Timer(delay, self.refresh_interface)
@@ -196,9 +198,10 @@ class FreeboxMediaSource(VlcMediaSource):
         for media in self._media_list:
             self._interface.add_grid_cell(position=position, value=media, render=False)
             position = position + 1
-        self.__media_cell_renderer.set_enabled(True)
+        threading.Timer(5, self.refresh_interface).start()
 
     def close(self) -> None:
+        self.__media_cell_renderer.set_enabled(False)
         if self.__refresh_interface_task:
             self.__refresh_interface_task.cancel()
             self.__refresh_interface_task = None
