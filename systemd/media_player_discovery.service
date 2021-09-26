@@ -4,12 +4,12 @@ After=network.target network-online.target
 
 [Service]
 Type=simple
-User=mediaplayer
-Group=mediaplayer
-PIDFile=/opt/mediaplayer/discovery_service.pid
-WorkingDirectory=/opt/mediaplayer
-ExecStart=python3 /opt/mediaplayer/discovery_service.py &
-ExecStop=pkill -u mediaplayer -f '.*discovery_service\.py.*'
+User=pi
+Group=users
+PIDFile=/opt/media_player/discovery_service.pid
+WorkingDirectory=/opt/media_player
+ExecStart=python3 /opt/media_player/discovery_service.py &
+ExecStop=pkill -u pi -f '.*discovery_service\.py.*'
 Restart=always
 RestartSec=30
 

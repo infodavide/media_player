@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Exec=/bin/bash -c 'cd /opt/media_player && ./startup.sh'
+Hidden=false
+X-GNOME-Autostart-enabled=true
+Name=Media Player
+Comment=Media Player

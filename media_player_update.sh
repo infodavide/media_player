@@ -1,10 +1,11 @@
 #!/bin/bash
-BASE_DIR="/opt/mediaplayer"
+BASE_DIR="/opt/media_player"
 LOCK_FILE=$BASE_DIR/media_player_update.lock
 DATE_FILE=$BASE_DIR/media_player_update.dat
 GIT_BRANCH="master"
 GIT_URL="https://github.com/infodavide/media_player.git"
-USER="mediaplayer"
+USER="pi"
+GROUP="users"
 
 function cleanup() {
 	rm -f $LOCK_FILE>/dev/null 2>&1
@@ -30,11 +31,20 @@ if [[ -d $BASE_DIR/.git ]]; then
 	git pull origin "$GIT_BRANCH"
 else
 	echo "Installing application..."
+	GROUP_EXISTS=`cat /etc/group|grep ^$GROUP | wc -l`
+
+	if [[ "$GROUP_EXISTS" -eq "0" ]]; then
+		echo "Creating group $GROUP..."
+		sudo groupadd -r $GROUP
+	else
+		echo "Group $GROUP already exists"
+	fi
+
 	USER_EXISTS=`cat /etc/passwd|grep ^$USER | wc -l`
 
 	if [[ "$USER_EXISTS" -eq "0" ]]; then
 		echo "Creating user $USER..."
-		sudo useradd -d $BASE_DIR -U -r $USER
+		sudo useradd -d $BASE_DIR -r -G $GROUP $USER
 	else
 		echo "User $USER already exists"
 	fi
@@ -48,9 +58,9 @@ else
 fi
 
 echo "Setting permissions on user home"
-sudo chown -R $USER.$USER $BASE_DIR
+sudo chown -R $USER.$GROUP $BASE_DIR
 sudo chmod -R u+rwX,g+rwX,o+rX-w $BASE_DIR
-usermod -aG $USER pi
+usermod -aG $GROUP pi
 chmod a+rwx $BASE_DIR/media_player_update.sh
 
 if [[ -d $BASE_DIR/sudoers.d ]]; then
@@ -77,6 +87,15 @@ fi
 echo "Installing python modules"
 sudo python3 -m pip install --upgrade pip
 sudo pip3 install requests flask-cors expiringdict PIL
+sudo pip3 install numpy --upgrade
+sudo pip3 install pillow --upgrade
+sudo pip3 install pyautogui
+sudo pip3 install netifaces
+sudo pip3 install zeroconf
+sudo pip3 install python-vlc
+sudo pip3 install screeninfo
+sudo pip3 install cv2
+sudo pip3 install opencv-python
 
 if [[ -d $BASE_DIR/python/* ]]; then
 	for d in $BASE_DIR/python/* ; do
@@ -89,6 +108,8 @@ fi
 
 echo "Installing applications"
 sudo apt-get install vlc
+sudo apt-get install libcblas-dev
+sudo apt-get install libatlas-base-dev
 sudo apt autoremove -y
 
 cleanup
