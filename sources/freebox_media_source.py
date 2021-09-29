@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import sys
-import threading
 import time
 import traceback
 import urllib.parse
@@ -17,6 +16,7 @@ from PIL import Image
 from canvas_grid import CanvasGridRenderer
 from media_api import MediaPlayerInterface, Media
 from media_player_config import MediaPlayerConfig
+from id_threading_utils import Executor
 from vlc_media_source import VlcMediaSource
 
 # URL to use:
@@ -145,8 +145,8 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
 class FreeboxMediaSource(VlcMediaSource):
     __logger: logging.Logger = None
 
-    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface):
-        super().__init__(parent_logger, config, interface)
+    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface, executor: Executor):
+        super().__init__(parent_logger, config, interface, executor)
         if not FreeboxMediaSource.__logger:
             FreeboxMediaSource.__logger = logging.getLogger(self.__class__.__name__)
             for handler in parent_logger.handlers:
@@ -156,10 +156,6 @@ class FreeboxMediaSource(VlcMediaSource):
         self.__last_retrieval: datetime.datetime = None
         # noinspection PyTypeChecker
         self.__freebox_config: Dict[str, Any] = None
-        self.__refresh_interface_delay: int = 30
-        # Tasks
-        # noinspection PyTypeChecker
-        self.__refresh_interface_task: threading.Timer = None
         # noinspection PyTypeChecker
         self.__media_cell_renderer: FreeboxMediaCellRenderer = FreeboxMediaCellRenderer(parent_logger, config)
 
@@ -174,15 +170,8 @@ class FreeboxMediaSource(VlcMediaSource):
         return 'sources' + os.sep + 'images' + os.sep + 'freebox.jpg'
 
     def refresh_interface(self) -> None:
-        delay: int = self.__refresh_interface_delay
-        if self.is_playing():
-            delay = 60
-        elif self._interface:
-            self.__media_cell_renderer.set_enabled(True)
+        if self._interface and self.__media_cell_renderer.is_enabled():
             self._interface.refresh()
-        if self._interface and delay > 0:
-            self.__refresh_interface_task = threading.Timer(delay, self.refresh_interface)
-            self.__refresh_interface_task.start()
 
     def open(self) -> None:
         super().open()
@@ -198,14 +187,20 @@ class FreeboxMediaSource(VlcMediaSource):
         for media in self._media_list:
             self._interface.add_grid_cell(position=position, value=media, render=False)
             position = position + 1
-        threading.Timer(5, self.refresh_interface).start()
+        self._executor.schedule(4.5, self.__media_cell_renderer.set_enabled, [True])
+        self._executor.schedule_at_rate(5, 30, self.refresh_interface)
 
     def close(self) -> None:
         self.__media_cell_renderer.set_enabled(False)
-        if self.__refresh_interface_task:
-            self.__refresh_interface_task.cancel()
-            self.__refresh_interface_task = None
         super().close()
+
+    def play(self, media: Media) -> None:
+        self.__media_cell_renderer.set_enabled(False)
+        super().play(media)
+
+    def stop(self):
+        super().stop()
+        self.__media_cell_renderer.set_enabled(True)
 
     def __load_freebox_config(self) -> None:
         path: str = self.get_config().get_root_path() + os.sep + 'freebox_media_source.json'

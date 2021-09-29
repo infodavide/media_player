@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import List, Any, Callable, Type
 from media_player_config import MediaPlayerConfig
 from canvas_grid import CanvasGridRenderer
+from id_threading_utils import Executor
 from PIL import Image
 
 CODE_LEFT: int = 0x0A
@@ -36,6 +37,9 @@ RESPONSE_ACK: bytes = bytes([0x06, 0x0A, 0x0D])
 RESPONSE_QRY: bytes = bytes([0x05, 0x0A, 0x0D])
 RESPONSE_NACK: bytes = bytes([0x15, 0x0A, 0x0D])
 CONTROLLER_EOM: bytes = bytes([0x0A, 0x0D])
+
+SOURCE_NOT_OPENED: str = 'Source not opened'
+MEDIA_NOT_AVAILABLE: str = 'Media not available'
 
 ImageLoader = Callable[[Any], type(List)]
 
@@ -439,7 +443,7 @@ class MediaPlayerInterface(ControllerListener):
 class MediaSource(ControllerListener):
     __logger: logging.Logger = None
 
-    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface):
+    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface, executor: Executor):
         """
         Set the logger and configuration.
         :param parent_logger: the logger
@@ -453,6 +457,7 @@ class MediaSource(ControllerListener):
         MediaSource.__logger.info('Initializing %s', self.__class__.__name__)
         self._config: MediaPlayerConfig = config
         self._interface: MediaPlayerInterface = interface
+        self._executor: Executor = executor
         # noinspection PyTypeChecker
         self._media_list: MediaList = list()
         # noinspection PyTypeChecker

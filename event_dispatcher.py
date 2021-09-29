@@ -7,18 +7,17 @@ import os
 import sys
 import threading
 import traceback
+import media_api
+
 from abc import ABC
 from typing import Any, List
-
 from PIL import Image
-
-import media_api
 from canvas_grid import CanvasGridRenderer
 from id_classes_utils import subclasses_of, import_files_of_dir
-from media_api import RemoteControlEvent, ControllerListener, MediaSource, InterfaceListener, MediaPlayerController, \
-    Media
+from media_api import RemoteControlEvent, ControllerListener, MediaSource, InterfaceListener, MediaPlayerController, Media
 from media_player_config import MediaPlayerConfig
 from media_player_interface import MediaPlayerInterface
+from id_threading_utils import Executor
 
 available_sources: List[MediaSource] = list()
 import_files_of_dir('sources')
@@ -55,8 +54,7 @@ class EventDispatcher(ControllerListener, InterfaceListener):
     def is_pad_event(event: RemoteControlEvent) -> bool:
         return event.get_code() == media_api.CODE_OK or event.get_code() == media_api.CODE_LEFT or event.get_code() == media_api.CODE_RIGHT or event.get_code() == media_api.CODE_UP or event.get_code() == media_api.CODE_DOWN
 
-    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface,
-                 controller: MediaPlayerController = None):
+    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface, executor: Executor, controller: MediaPlayerController = None):
         """
         Initialize the event dispatcher.
         """
@@ -69,11 +67,9 @@ class EventDispatcher(ControllerListener, InterfaceListener):
         self.__interface: MediaPlayerInterface = interface
         self.__interface.set_listener(self)
         self.__controller: MediaPlayerController = controller
+        self.__executor: Executor = executor
         # noinspection PyTypeChecker
         self.__pending_event: RemoteControlEvent = None
-        # Tasks
-        # noinspection PyTypeChecker
-        self.__pending_event_task: threading.Timer = None
         # noinspection PyTypeChecker
         self.__source: MediaSource = None
         self.__source_cell_renderer: CanvasGridRenderer = MediaSourceCellRenderer(parent_logger, config)
@@ -82,7 +78,7 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                 if 'Mock' in subclass.__name__ or ABC in subclass.__bases__:
                     continue
                 EventDispatcher.__logger.info('Instantiating source: %s', subclass.__name__)
-                obj: MediaSource = subclass(parent_logger, config, interface)
+                obj: MediaSource = subclass(parent_logger, config, interface, self.__executor)
                 available_sources.append(obj)
             self.__display_sources()
         except Exception as ex:
@@ -96,11 +92,6 @@ class EventDispatcher(ControllerListener, InterfaceListener):
         for source in available_sources:
             EventDispatcher.__logger.info('Using source: %s', source.get_name())
             self.__interface.add_grid_cell(value=source, render=True)
-
-    def __del__(self):
-        if self.__pending_event_task:
-            self.__pending_event_task.cancel()
-            self.__pending_event_task = None
 
     def get_controller(self) -> MediaPlayerController:
         return self.__controller
@@ -143,9 +134,6 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                 self.__interface.display_notice(text)
 
     def on_stop(self) -> None:
-        if self.__pending_event_task:
-            self.__pending_event_task.cancel()
-            self.__pending_event_task = None
         if self.__source:
             EventDispatcher.__logger.debug('Closing source: %s', self.__source.get_name())
             self.__source.close()
@@ -165,14 +153,11 @@ class EventDispatcher(ControllerListener, InterfaceListener):
             numeric_data: int = event.to_numeric()
             if event != self.__pending_event and numeric_data and numeric_data >= 0:
                 EventDispatcher.__logger.debug('Accumulating numeric value described by the event')
-                if self.__pending_event_task:
-                    self.__pending_event_task.cancel()
                 if self.__pending_event is None:
                     self.__pending_event = event
                 else:
                     self.__pending_event.set_data(self.__pending_event.get_data() * 10 + numeric_data)
-                self.__pending_event_task = threading.Timer(3, self.on_control_event, [self.__pending_event])
-                self.__pending_event_task.start()
+                self.__executor.schedule(3, self.on_control_event, [self.__pending_event])
                 return bytes()
             # Event is the accumulated (pending) one, it must be cleared
             if event == self.__pending_event:
@@ -213,7 +198,7 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                             self.__interface.display_warning('Source: %s not found' % event.get_data())
             elif self.__source:
                 EventDispatcher.__logger.debug('Event forwarded to the source: %s', self.__source.get_name())
-                threading.Thread(target=self.__source.on_control_event, args=(event,)).start()
+                self.__source.on_control_event(event)
             else:
                 EventDispatcher.__logger.debug('No source selected')
                 if self.__interface:

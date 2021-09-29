@@ -3,6 +3,7 @@
 # Media player HTTP server
 
 import atexit
+import concurrent.futures
 import logging
 import os
 import pathlib
@@ -16,6 +17,7 @@ from media_player_interface import MediaPlayerInterface, MediaPlayerInterfaceImp
 from media_player_tcp_server import MediaPlayerTcpController
 from event_dispatcher import EventDispatcher
 from media_api import MediaPlayerController
+from id_threading_utils import Executor
 
 VERSION: str = '1.0'
 # noinspection PyTypeChecker
@@ -28,6 +30,8 @@ interface: MediaPlayerInterface = None
 controller: MediaPlayerController = None
 # noinspection PyTypeChecker
 event_dispatcher: EventDispatcher = None
+# noinspection PyTypeChecker
+executor: Executor = None
 
 
 def create_rotating_log(path: str) -> logging.Logger:
@@ -67,6 +71,14 @@ def shutdown():
     :return:
     """
     global logger
+    if globals().get('executor'):
+        try:
+            if executor:
+                logger.info('Stopping executor...')
+                executor.shutdown(wait=False)
+        except Exception as ex3:
+            logger.error('Error when shutting down the controller: %s' % ex3, file=sys.stderr)
+            logger.error(ex3)
     if globals().get('controller'):
         try:
             if controller and controller.is_running():
@@ -93,7 +105,7 @@ def configure():
     Configure the application by creating the logger, the authentication cache, registering the signal hooks.
     :return:
     """
-    global CONFIG_PATH, config, logger, interface, controller, event_dispatcher
+    global CONFIG_PATH, config, logger, interface, controller, event_dispatcher, executor
     config = MediaPlayerConfig()
     config.read(CONFIG_PATH)
     # noinspection PyUnresolvedReferences
@@ -104,15 +116,16 @@ def configure():
     atexit.register(shutdown)
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
+    executor = Executor(logger, max_workers=2, thread_name_prefix='MediaPlayer')
     try:
-        interface = MediaPlayerInterfaceImpl(logger, config)
+        interface = MediaPlayerInterfaceImpl(logger, config, executor)
     except Exception as ex4:
         exc_type4, exc_value4, exc_traceback4 = sys.exc_info()
         traceback.print_tb(exc_traceback4, limit=6, file=sys.stderr)
         logger.error(ex4)
         sys.exit(1)
     try:
-        event_dispatcher = EventDispatcher(logger, config, interface)
+        event_dispatcher = EventDispatcher(logger, config, interface, executor)
         controller = MediaPlayerTcpController(logger, config, event_dispatcher)
         event_dispatcher.set_controller(controller)
     except Exception as ex3:

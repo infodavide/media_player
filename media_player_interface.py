@@ -2,7 +2,6 @@
 # Media player screen
 import io
 import logging
-import tkinter
 import media_api
 import os
 import pyautogui
@@ -13,14 +12,19 @@ import time
 import traceback
 
 if sys.version_info.major == 3:
-    import tkinter as tk, tkinter.font as tkf
+    import tkinter as tk
+    import tkinter.font as tkf
 else:
-    import Tkinter as tk, tkFont as tkf
+    # noinspection PyUnresolvedReferences,PyPep8Naming
+    import Tkinter as tk
+    # noinspection PyUnresolvedReferences,PyPep8Naming
+    import tkFont as tkf
 
 from typing import Any, List
 from media_player_config import MediaPlayerConfig
 from media_api import RemoteControlEvent, MediaPlayerInterface, Media, MediaSource, ControllerListener
 from canvas_grid import CanvasGrid, CanvasGridListener, CanvasGridCell, CanvasGridRenderer
+from id_threading_utils import Executor
 from id_tk import TkClock
 from PIL import Image, ImageTk
 
@@ -31,7 +35,7 @@ _FULLSCREEN: str = 'fullscreen'
 class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
     __logger: logging.Logger = None
 
-    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig):
+    def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, executor: Executor):
         """
         Initialize the media player interface.
         :param parent_logger: the main logger
@@ -49,11 +53,7 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__playing: bool = False
         # Locks
         self.__lock: threading.RLock = threading.RLock()
-        self.__start_lock: threading.RLock = threading.RLock()
-        self.__stop_lock: threading.RLock = threading.RLock()
-        # Tasks
-        # noinspection PyTypeChecker
-        self.__cleanup_top_task: threading.Timer = None
+        self.__executor: Executor = executor
         # noinspection PyUnresolvedReferences
         self.__log_file_path: str = self._config.get_temp_dir() + os.sep + 'media_player.log'
         # noinspection PyTypeChecker
@@ -107,7 +107,7 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         image = image.resize((self.__center_cnv.winfo_width(), self.__center_cnv.winfo_height()), Image.ANTIALIAS)
         self.__center_image_id = self.__center_cnv.create_image(0, 0, image=ImageTk.PhotoImage(image), anchor=tk.NW)
         self.__window.update()
-        self.__cnv_grid = CanvasGrid(MediaPlayerInterfaceImpl.__logger, self.__window, self.__center_cnv)
+        self.__cnv_grid = CanvasGrid(MediaPlayerInterfaceImpl.__logger, self.__window, self.__center_cnv, executor)
         self.__cnv_grid.set_listener(self)
         MediaPlayerInterfaceImpl.__logger.info('Media player interface configured')
 
@@ -125,13 +125,13 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             for k in self.__center_cnv.find_all():
                 try:
                     self.__center_cnv.itemconfigure(k, state='normal')
-                except tkinter.TclError as ex:
+                except tk.TclError as ex:
                     MediaPlayerInterfaceImpl.__logger.error('Id not found: %s' % ex)
         else:
             for k in self.__center_cnv.find_all():
                 try:
                     self.__center_cnv.itemconfigure(k, state='hidden')
-                except tkinter.TclError as ex:
+                except tk.TclError as ex:
                     MediaPlayerInterfaceImpl.__logger.error('Id not found: %s' % ex)
 
     def get_x(self) -> int:
@@ -171,7 +171,6 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         with self.__lock:
             if self.__active:
                 return
-        with self.__start_lock:
             MediaPlayerInterfaceImpl.__logger.debug('Starting...')
             self.__active = True
             MediaPlayerInterfaceImpl.__logger.info('Opening window...')
@@ -201,7 +200,6 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         with self.__lock:
             if not self.__active:
                 return
-        with self.__stop_lock:
             MediaPlayerInterfaceImpl.__logger.info('Stopping...')
             self.__active = False
             try:
@@ -257,8 +255,7 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         if text:
             MediaPlayerInterfaceImpl.__logger.debug('Displaying text at top: %s', text)
             self.__top_lbl['text'] = text
-            self.__cleanup_top_task = threading.Timer(3, self.__clear_text_at_top)
-            self.__cleanup_top_task.start()
+            self.__executor.schedule(3, self.__clear_text_at_top)
         else:
             MediaPlayerInterfaceImpl.__logger.debug('Displaying empty text at top')
             self.__top_lbl['text'] = ''

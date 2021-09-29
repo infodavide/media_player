@@ -139,6 +139,7 @@ class MediaPlayerTcpController(MediaPlayerController):
                 self.__server = server
                 while self.__active:
                     server.handle_request()
+                    time.sleep(0.2)
         except TypeError as ex:
             MediaPlayerTcpController.__logger.error('Error: %s' % ex)
             exc_type, exc_value, exc_traceback = sys.exc_info()
