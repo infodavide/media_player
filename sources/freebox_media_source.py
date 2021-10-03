@@ -76,7 +76,6 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
                 tries = 0
                 while colors < _THUMBNAIL_MIN_COLORS and tries < _THUMBNAIL_TRIES:
                     tries = tries + 1
-                    FreeboxMediaCellRenderer.__logger.info('Loading (try: %s) image of media from: %s', tries, url)
                     cap = cv2.VideoCapture(url)
                     # noinspection PyBroadException
                     try:
@@ -106,7 +105,6 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
                 if media.get_image():
                     result = media.get_image()
                 elif media.get_image_url():
-                    FreeboxMediaCellRenderer.__logger.debug('Loading media image from: %s', media.get_image_url())
                     # noinspection PyTypeChecker
                     binary_response: requests.Response = None
                     # noinspection PyBroadException
@@ -121,7 +119,7 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
                             binary_response.close()
             else:
                 url: str = _FREEBOX_CHANNEL_DESCRIPTION_PATTTERN % (media.get_stream_id(), str(int(time.time())))
-                FreeboxMediaCellRenderer.__logger.debug('Loading media title from: %s', url)
+                # Loading media title
                 # noinspection PyBroadException
                 try:
                     with urllib.request.urlopen(url) as json_response:
@@ -187,16 +185,16 @@ class FreeboxMediaSource(VlcMediaSource):
         for media in self._media_list:
             self._interface.add_grid_cell(position=position, value=media, render=False)
             position = position + 1
-        self._executor.schedule(4.5, self.__media_cell_renderer.set_enabled, [True])
+        self._executor.schedule(4.5, self.__media_cell_renderer.set_enabled, True)
         self._executor.schedule_at_rate(5, 30, self.refresh_interface)
 
     def close(self) -> None:
         self.__media_cell_renderer.set_enabled(False)
         super().close()
 
-    def play(self, media: Media) -> None:
+    def play_media(self, media: Media = None, channel: int = -1) -> None:
         self.__media_cell_renderer.set_enabled(False)
-        super().play(media)
+        super().play(media=media, channel=channel)
 
     def stop(self):
         super().stop()

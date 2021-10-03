@@ -262,7 +262,7 @@ class InterfaceListener(ABC):
         pass
 
 
-class MediaPlayerInterface(ControllerListener):
+class MediaPlayerInterface:
     def __init__(self, config: MediaPlayerConfig):
         self._config: MediaPlayerConfig = config
         # noinspection PyTypeChecker
@@ -309,9 +309,23 @@ class MediaPlayerInterface(ControllerListener):
         pass
 
     @abstractmethod
-    def get_window_id(self) -> int:
+    def get_view_handle(self) -> int:
         """
-        Return the main window of the interface.
+        Return the handle of the view.
+        """
+        pass
+
+    @abstractmethod
+    def get_view_height(self) -> int:
+        """
+        Return the height of the view.
+        """
+        pass
+
+    @abstractmethod
+    def get_view_width(self) -> int:
+        """
+        Return the width of the view.
         """
         pass
 
@@ -440,7 +454,7 @@ class MediaPlayerInterface(ControllerListener):
         pass
 
 
-class MediaSource(ControllerListener):
+class MediaSource:
     __logger: logging.Logger = None
 
     def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface, executor: Executor):
@@ -475,7 +489,7 @@ class MediaSource(ControllerListener):
     def get_config(self) -> MediaPlayerConfig:
         return self._config
 
-    def play(self, media: Media) -> None:
+    def play(self, media: Media = None, channel: int = -1) -> None:
         """
         Play the media.
         :return: None.
@@ -536,6 +550,36 @@ class MediaSource(ControllerListener):
         """
         Return the image
         :return: the path to the image.
+        """
+        pass
+
+    @abstractmethod
+    def get_volume(self) -> int:
+        """
+        Return the volume in range 0 to 100
+        :return: the volume.
+        """
+        pass
+
+    @abstractmethod
+    def set_volume(self, value: int) -> None:
+        """
+        Set the volume in range 0 to 100
+        :param: value: the volume.
+        """
+        pass
+
+    @abstractmethod
+    def play_next(self) -> None:
+        """
+        Play next media if available.
+        """
+        pass
+
+    @abstractmethod
+    def play_previous(self) -> None:
+        """
+        Play previous media if available.
         """
         pass
 

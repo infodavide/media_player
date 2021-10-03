@@ -4,8 +4,8 @@ import datetime
 import io
 import logging
 import os
+import pyautogui
 import sys
-import threading
 import traceback
 import media_api
 
@@ -41,7 +41,6 @@ class MediaSourceCellRenderer(CanvasGridRenderer):
         source: MediaSource = value
         if source.get_image_path():
             image_path: str = self.__config.get_root_path() + os.sep + source.get_image_path()
-            MediaSourceCellRenderer.__logger.info('Loading image of source from: %s', image_path)
             with open(image_path, 'rb') as fp:
                 return Image.open(io.BytesIO(fp.read()))
         return None
@@ -89,6 +88,7 @@ class EventDispatcher(ControllerListener, InterfaceListener):
 
     def __display_sources(self):
         self.__interface.set_cell_renderer(self.__source_cell_renderer)
+        self.__interface.set_grid_cells([])
         for source in available_sources:
             EventDispatcher.__logger.info('Using source: %s', source.get_name())
             self.__interface.add_grid_cell(value=source, render=True)
@@ -115,7 +115,7 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                 self.__source.open()
             elif self.__source and isinstance(value, Media):
                 media: Media = value
-                self.__source.on_control_event(RemoteControlEvent(code=media_api.CODE_CH, data=media))
+                self.__source.play(media)
 
     def on_selection(self, grid, value: Any) -> None:
         EventDispatcher.__logger.debug('Selection of: %s', value)
@@ -155,10 +155,11 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                 EventDispatcher.__logger.debug('Accumulating numeric value described by the event')
                 if self.__pending_event is None:
                     self.__pending_event = event
+                    self.__pending_event.set_data(numeric_data)
                 else:
-                    self.__pending_event.set_data(self.__pending_event.get_data() * 10 + numeric_data)
-                self.__executor.schedule(3, self.on_control_event, [self.__pending_event])
-                return bytes()
+                    self.__pending_event.set_data(numeric_data + self.__pending_event.get_data() * 10)
+                self.__executor.schedule(3, self.on_control_event, self.__pending_event)
+                return result
             # Event is the accumulated (pending) one, it must be cleared
             if event == self.__pending_event:
                 self.__pending_event = None
@@ -172,9 +173,16 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                     self.__controller.stop()
                 if self.__interface:
                     self.__interface.stop()
-            elif self.__interface and EventDispatcher.is_pad_event(event):
-                EventDispatcher.__logger.debug('Pad event forwarded to the interface')
-                result = self.__interface.on_control_event(event)
+            elif event.get_code() == media_api.CODE_OK:
+                pyautogui.press('enter')
+            elif event.get_code() == media_api.CODE_LEFT:
+                pyautogui.press('left')
+            elif event.get_code() == media_api.CODE_RIGHT:
+                pyautogui.press('right')
+            elif event.get_code() == media_api.CODE_UP:
+                pyautogui.press('up')
+            elif event.get_code() == media_api.CODE_DOWN:
+                pyautogui.press('down')
             # Go to source if no media is played
             elif event.get_code() == media_api.CODE_SOURCE or (self.__source and event.get_code() == media_api.CODE_BACK and not self.__source.is_playing()):
                 EventDispatcher.__logger.debug('Source event received')
@@ -197,8 +205,27 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                         if self.__interface:
                             self.__interface.display_warning('Source: %s not found' % event.get_data())
             elif self.__source:
-                EventDispatcher.__logger.debug('Event forwarded to the source: %s', self.__source.get_name())
-                self.__source.on_control_event(event)
+                if event.get_code() == media_api.CODE_BACK or event.get_code() == media_api.CODE_STOP:
+                    self.__source.stop()
+                    self.__interface.set_playing(False)
+                elif event.get_code() == media_api.CODE_CH and event.get_data():
+                    self.__source.play(channel=numeric_data)
+                elif event.get_code() == media_api.CODE_VOL and event.get_data():
+                    self.__source.set_volume(numeric_data)
+                elif event.get_code() == media_api.CODE_CH_UP or event.get_code() == media_api.CODE_NEXT:
+                    self.__source.play_next()
+                elif event.get_code() == media_api.CODE_CH_DOWN or event.get_code() == media_api.CODE_PREVIOUS:
+                    self.__source.play_previous()
+                elif event.get_code() == media_api.CODE_VOL_UP:
+                    current_volume: int = self.__source.get_volume()
+                    if current_volume < 100:
+                        self.__source.set_volume(current_volume + 1)
+                    self.__interface.display_notice('Volume: %s' % self.__source.get_volume())
+                elif event.get_code() == media_api.CODE_VOL_DOWN:
+                    current_volume: int = self.__source.get_volume()
+                    if current_volume > 0:
+                        self.__source.set_volume(current_volume - 1)
+                    self.__interface.display_notice('Volume: %s' % self.__source.get_volume())
             else:
                 EventDispatcher.__logger.debug('No source selected')
                 if self.__interface:

@@ -9,7 +9,7 @@ from abc import ABC
 import vlc
 
 import media_api
-from media_api import RemoteControlEvent, MediaSource, MediaPlayerInterface, Media
+from media_api import MediaSource, MediaPlayerInterface, Media
 from media_player_config import MediaPlayerConfig
 from id_threading_utils import Executor
 
@@ -83,16 +83,18 @@ class VlcMediaSource(MediaSource, ABC):
     def is_playing(self) -> bool:
         return self._player is not None and self._player.is_playing()
 
-    def on_stop(self) -> None:
-        if self.is_open():
-            self.close()
-
     def stop(self):
         if self._player and self._player.is_playing():
             self._player.stop()
+            self._media = None
         super().stop()
 
-    def _play_media(self, media: Media = None, channel: int = -1):
+    def play_media(self, media: Media = None, channel: int = -1) -> None:
+        if self._media:
+            if self._player.is_playing():
+                self._player.pause()
+            elif self._media:
+                self._player.play()
         if channel >= 0:
             for item in self._media_list:
                 if item.get_channel() == channel:
@@ -101,10 +103,11 @@ class VlcMediaSource(MediaSource, ABC):
         if media:
             self._media = media
             vlc_media: vlc.Media = self._instance.media_new(media.get_stream_url())
+            vlc_media.set_meta(0, media.get_name())
             self._interface.set_playing(True)
             VlcMediaSource.__logger.info('Playing media: %s', media.get_name())
             self._interface.display_notice('Playing media: ' + media.get_name())
-            self._player.set_xwindow(self._interface.get_window_id())
+            self._player.set_xwindow(self._interface.get_view_handle())
             self._player.set_media(vlc_media)
             self._player.set_video_title_display(0, 5000)
             self._player.play()
@@ -113,70 +116,29 @@ class VlcMediaSource(MediaSource, ABC):
             VlcMediaSource.__logger.warning(media_api.MEDIA_NOT_AVAILABLE)
             self._interface.display_warning(media_api.MEDIA_NOT_AVAILABLE)
 
-    def on_control_event(self, event: RemoteControlEvent) -> bytes:
-        """
-        Receive an event from remote control.
-        :return: True if processed.
-        """
-        VlcMediaSource.__logger.debug('Event received: %s', event)
-        numeric_data: int = event.to_numeric()
-        if event.get_code() == media_api.CODE_BACK or event.get_code() == media_api.CODE_STOP:
-            if self._player and self._player.is_playing():
-                VlcMediaSource.__logger.debug('Stopping player')
-                self._player.stop()
-                self._interface.set_playing(False)
-        elif event.get_code() == media_api.CODE_VOL_UP:
-            if self._player:
-                current_volume: int = self._player.audio_get_volume()
-                if current_volume < 100:
-                    self._player.audio_set_mute(False)
-                    self._player.audio_set_volume(current_volume + 1)
-                self._interface.display_notice('Volume: %s' % self._player.audio_get_volume())
-        elif event.get_code() == media_api.CODE_VOL_DOWN:
-            if self._player:
-                current_volume: int = self._player.audio_get_volume()
-                if current_volume > 0:
-                    self._player.audio_set_volume(current_volume - 1)
-                if self._player.audio_get_volume() <= 0:
-                    self._player.audio_set_mute(True)
-                self._interface.display_notice('Volume: %s' % self._player.audio_get_volume())
-        elif event.get_code() == media_api.CODE_CH_UP or event.get_code() == media_api.CODE_NEXT:
-            if self._player:
-                if self._media:
-                    self._play_media(media=self._media, channel=self._media.get_channel() + 1)
-                else:
-                    self._play_media(channel=1)
+    def get_volume(self) -> int:
+        if self._player:
+            return self._player.audio_get_volume()
+        return 0
+
+    def set_volume(self, value: int) -> None:
+        if self._player:
+            return self._player.audio_set_volume(value)
+
+    def play_next(self) -> None:
+        if self._player:
+            if self._media:
+                self.play_media(media=self._media, channel=self._media.get_channel() + 1)
             else:
-                VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)
-                self._interface.display_warning(media_api.SOURCE_NOT_OPENED)
-        elif event.get_code() == media_api.CODE_CH_DOWN or event.get_code() == media_api.CODE_PREVIOUS:
-            if self._player:
-                if self._media:
-                    self._play_media(media=self._media, channel=self._media.get_channel() - 1)
-                else:
-                    self._play_media(channel=1)
-            else:
-                VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)
-                self._interface.display_warning(media_api.SOURCE_NOT_OPENED)
-        elif event.get_code() == media_api.CODE_VOL and event.get_data():
-            if self._player and numeric_data and numeric_data >= 0:
-                self._player.audio_set_volume(numeric_data)
-        elif event.get_code() == media_api.CODE_PLAY:
-            if self._player:
-                if self._player.is_playing():
-                    self._player.pause()
-                elif self._media:
-                    self._player.play()
-        elif event.get_code() == media_api.CODE_CH and event.get_data():
-            if self._player:
-                self._player.audio_set_mute(False)
-                if isinstance(event.get_data(), Media):
-                    self._play_media(media=event.get_data())
-                elif numeric_data:
-                    self._play_media(media=self._media, channel=numeric_data)
-            else:
-                VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)
-                self._interface.display_warning(media_api.SOURCE_NOT_OPENED)
+                self.play_media(channel=1)
         else:
-            VlcMediaSource.__logger.debug('Event ignored')
-        return media_api.RESPONSE_ACK
+            VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)
+
+    def play_previous(self) -> None:
+        if self._player:
+            if self._media:
+                self.play_media(media=self._media, channel=self._media.get_channel() - 1)
+            else:
+                self.play_media(channel=1)
+        else:
+            VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)

@@ -4,7 +4,6 @@ import io
 import logging
 import media_api
 import os
-import pyautogui
 import screeninfo
 import sys
 import threading
@@ -117,8 +116,14 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             listener: ControllerListener = self._listener
             listener.on_control_event(control_event)
 
-    def get_window_id(self) -> int:
+    def get_view_handle(self) -> int:
         return self.__center_cnv.winfo_id()
+
+    def get_view_height(self) -> int:
+        return self.__center_cnv.winfo_height()
+
+    def get_view_width(self) -> int:
+        return self.__center_cnv.winfo_width()
 
     def __set_grid_visible(self, flag: bool):
         if flag:
@@ -315,9 +320,11 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         return self.__cnv_grid.get_rows() * self.__cnv_grid.get_columns()
 
     def add_grid_cell(self, value: Any, position: int = -1, render: bool = True) -> int:
-        if self.__cell_type != type(value):
-            self.__cnv_grid.clear()
-        self.__cell_type = type(value)
+        if len(self.__cnv_grid.get_cells()) == 0:
+            if isinstance(value, MediaSource):
+                self.__cell_type = MediaSource
+            elif isinstance(value, Media):
+                self.__cell_type = Media
         if isinstance(value, MediaSource):
             source: MediaSource = value
             self.__cnv_grid.add_cell(position=position, label=source.get_name(), value=source)
@@ -328,30 +335,3 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             return position
         MediaPlayerInterfaceImpl.__logger.warning('Type of value not handled: %s', self.__cell_type)
         return -1
-
-    def on_control_event(self, event: RemoteControlEvent) -> bytes:
-        MediaPlayerInterfaceImpl.__logger.debug('Event received: %s', event)
-        if event:
-            if event.get_code() == media_api.CODE_OK:
-                pyautogui.press('enter')
-            elif event.get_code() == media_api.CODE_LEFT:
-                pyautogui.press('left')
-            elif event.get_code() == media_api.CODE_RIGHT:
-                pyautogui.press('right')
-            elif event.get_code() == media_api.CODE_UP:
-                pyautogui.press('up')
-            elif event.get_code() == media_api.CODE_DOWN:
-                pyautogui.press('down')
-            elif event.get_code() == media_api.CODE_BACK:
-                pyautogui.press('esc')
-            elif event.get_code() == media_api.CODE_CH:
-                value: str = event.get_data()
-                if value.isnumeric():
-                    self.__display_at_top(value)
-            elif event.get_data():
-                self.__display_at_center(event.get_data())
-        return media_api.RESPONSE_ACK
-
-    def on_stop(self) -> None:
-        if self.__cnv_grid:
-            self.__cnv_grid.clear()

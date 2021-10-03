@@ -186,32 +186,25 @@ class CanvasGridRenderer(ABC):
         return image
 
     def render_cell(self, grid, cell: CanvasGridCell, cell_width: int, cell_height: int, render_image: bool = True) -> None:
-        CanvasGridRenderer.__logger.debug('Rendering cell: %s', cell)
         # noinspection PyBroadException
         try:
             image_entry: ImageEntry = cell.get_image_entry()
             if render_image or image_entry is None or image_entry.get_image() is None:
                 image: Image = None
                 if render_image:
-                    CanvasGridRenderer.__logger.debug('Loading image for cell: %s', cell)
                     image = self.render_image(cell.get_value())
                 # Create the cell background image
                 result: Image = Image.new('RGB', (cell_width, cell_height), color=self._background_color)
                 if image:
-                    CanvasGridRenderer.__logger.debug('Centering image for cell: %s', cell)
                     # Resize image to fill the cell keeping the ration
                     image_w, image_h = image.size
-                    CanvasGridRenderer.__logger.debug('Loaded image size: %sx%s', str(image_w), str(image_h))
                     if image_w > cell_width or image_h > cell_height:
                         image.thumbnail((cell_width, cell_width), Image.ANTIALIAS)
                         image_w, image_h = image.size
-                        CanvasGridRenderer.__logger.debug('Resized image size: %sx%s', str(image_w), str(image_h))
                         # unused: image = image.crop((0, 0, cell_width, cell_height))
                     # Put the image on the center of the background image of the cell
                     image_w, image_h = image.size
-                    CanvasGridRenderer.__logger.debug('Final image size: %sx%s', str(image_w), str(image_h))
                     cell_image_w, cell_image_h = result.size
-                    CanvasGridRenderer.__logger.debug('Cell size: %sx%s', str(cell_image_w), str(cell_image_h))
                     result.paste(image, ((cell_image_w - image_w) // 2, (cell_image_h - image_h) // 2))
                 else:
                     CanvasGridRenderer.__logger.warning('No image loaded for cell: %s', cell)
@@ -223,18 +216,14 @@ class CanvasGridRenderer(ABC):
                                        outline=self._border_color, width=1)
                 # Round corners
                 CanvasGridRenderer.__add_corners(result, 8)
-                CanvasGridRenderer.__logger.debug('Cell image loaded: %s', cell)
             else:
-                CanvasGridRenderer.__logger.debug('Cell image unchanged: %s', cell)
                 result = image_entry.get_image()
             if result:
-                CanvasGridRenderer.__logger.debug('Submitting canvas update for cell: %s', cell)
                 grid.get_canvas().after(50, grid.update_cell_image, cell, result)
             else:
                 cell.get_image_entry().set_last_update(datetime.datetime.now())
                 cell.get_image_entry().set_updating(False)
-                CanvasGridRenderer.__logger.debug('Invalid image to update on canvas for cell: %s', cell)
-            CanvasGridRenderer.__logger.debug('Cell rendered: %s', cell)
+                CanvasGridRenderer.__logger.warning('Invalid image to update on canvas for cell: %s', cell)
         except:  # catch all
             CanvasGridRenderer.__logger.error(traceback.format_exc())
 
@@ -393,7 +382,6 @@ class CanvasGrid(object):
         return self.__window
 
     def update_cell_image(self, cell: CanvasGridCell, image):
-        CanvasGrid.__logger.debug('Drawing cell: %s', cell)
         CanvasGrid.free_image(self.__canvas, cell)
         if not cell.get_image_entry():
             cell.set_image_entry(ImageEntry(image=image))
@@ -411,7 +399,6 @@ class CanvasGrid(object):
                     self.__select_position(0)
             entry.set_last_update(datetime.datetime.now())
             entry.set_updating(False)
-            CanvasGrid.__logger.debug('Cell image updated for cell: %s', cell)
         else:
             CanvasGrid.__logger.warning('No image for cell: %s', cell)
         # unused:if self.__window:
@@ -429,34 +416,33 @@ class CanvasGrid(object):
                 start = position
                 end = position
             else:
-                CanvasGrid.__logger.debug('Redraw skipped, cell is outside the visible range of cells')
+                # Redraw skipped, cell is outside the visible range of cells
                 return
         elif first >= 0 and start <= first <= end:
             start = first
         if start >= cells_count:
-            CanvasGrid.__logger.warning('Redraw skipped, start argument is out of bound: %s', start)
+            # Redraw skipped, start argument is out of bound
             return
         if end < 0:
             end = cells_count
-        CanvasGrid.__logger.debug('Drawing images from start: %s to %s', start, end)
         now: datetime.datetime = datetime.datetime.now()
         time_limit: datetime.datetime = now - datetime.timedelta(seconds=2)
         for position in range(start, end + 1):
             cell: CanvasGridCell = self.__get_cell(position)
             if not cell:
-                CanvasGrid.__logger.debug('Redraw skipped, cell position is invalid: %s', position)
+                CanvasGrid.__logger.warning('Redraw skipped, cell position is invalid: %s', position)
                 continue
             if not cell.get_image_entry():
                 cell.set_image_entry(ImageEntry())
             entry: ImageEntry = cell.get_image_entry()
             if entry.is_updating() or (entry.get_last_update() and entry.get_last_update() > time_limit):
-                CanvasGrid.__logger.debug('Redraw skipped, cell updating or updated too recently: %s', cell)
+                # Redraw skipped, cell updating or updated too recently
                 continue
             cell.set_row(int(position / self.__columns))
             cell.set_column(position % self.__columns)
             if cell.get_row() < self.__first_visible_row or cell.get_row() >= self.__first_visible_row + self.__rows:
                 cell.set_coordinates(-self.__cell_width, -self.__cell_height)
-                CanvasGrid.__logger.info('Redraw skipped, cell is outside the visible area: %s', cell)
+                # Redraw skipped, cell is outside the visible area
                 continue
             entry.set_updating(True)
             cell.set_coordinates(
@@ -464,7 +450,6 @@ class CanvasGrid(object):
                 self.__margin_y + self.__padding + (cell.get_row() - self.__first_visible_row) * (
                             self.__cell_height + self.__padding)
             )
-            CanvasGrid.__logger.debug('Setting coordinates to: %s,%s for cell: %s', cell.get_x(), cell.get_y(), cell)
             if self.__window:
                 self.__executor.submit(self.__renderer.render_cell, self, cell, self.__cell_width, self.__cell_height, True)
 
@@ -673,6 +658,7 @@ class CanvasGrid(object):
             self.__window.update()
 
     def add_cell(self, position: int = -1, label: str = None, value: Any = None) -> CanvasGridCell:
+        cell: CanvasGridCell = None
         with self.__cells_lock:
             if position < 0:
                 position = len(self.__cells)
@@ -683,7 +669,7 @@ class CanvasGrid(object):
                 while len(self.__cells) <= position:
                     self.__cells.append(CanvasGridCell())
             CanvasGrid.__logger.debug(_AVAILABLE_CELLS + str(len(self.__cells)))
-            cell: CanvasGridCell = self.__cells[position]
+            cell = self.__cells[position]
         if not label:
             label = 'Cell ' + str(position)
         cell.set_label(label)
