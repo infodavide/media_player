@@ -71,34 +71,35 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__window['background'] = 'black'
         self.__window.bind('<F11>', self.toggle_full_screen)
         self.__window.bind('<Control-q>', self.stop)
-        self.__window.bind('<Escape>', lambda e: self._on_key(RemoteControlEvent(media_api.CODE_BACK), e))
-        self.__window.bind('<KP_Add>', lambda e: self._on_key(RemoteControlEvent(media_api.CODE_VOL_UP), e))
-        self.__window.bind('<KP_Subtract>', lambda e: self._on_key(RemoteControlEvent(media_api.CODE_VOL_DOWN), e))
-        self.__window.bind('<Control-KP_Add>', lambda e: self._on_key(RemoteControlEvent(media_api.CODE_CH_UP), e))
-        self.__window.bind('<Control-KP_Subtract>', lambda e: self._on_key(RemoteControlEvent(media_api.CODE_CH_DOWN), e))
+        self.__window.bind('<Escape>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_BACK), e))
+        self.__window.bind('<KP_Add>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_VOL_UP), e))
+        self.__window.bind('<KP_Subtract>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_VOL_DOWN), e))
+        self.__window.bind('<Control-KP_Add>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_CH_UP), e))
+        self.__window.bind('<Control-KP_Subtract>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_CH_DOWN), e))
         for k in range(10):
             v: str = str(k)
-            self.__window.bind('<KP_%s>' % v, lambda e, data=v: self._on_key(RemoteControlEvent(code=media_api.CODE_CH, data=data), e))
-            self.__window.bind('<Control-KP_%s>' % v, lambda e, data=v: self._on_key(RemoteControlEvent(code=media_api.CODE_VOL, data=data), e))
+            self.__window.bind('<KP_%s>' % v, lambda e, data=v: self.send_control_event(RemoteControlEvent(code=media_api.CODE_CH, data=data), e))
+            self.__window.bind('<Control-KP_%s>' % v, lambda e, data=v: self.send_control_event(RemoteControlEvent(code=media_api.CODE_VOL, data=data), e))
         self.__window.attributes('-topmost', True)
         self.__window.attributes('-' + _FULLSCREEN, self.__full_screen_state)
         self.__window.minsize(1027, 768)
         w, h = self.__window.winfo_screenwidth(), self.__window.winfo_screenheight()
+        self.__window.maxsize(w, h)
         MediaPlayerInterfaceImpl.__logger.info('Screen size: %sx%s', w, h)
         fonts = list(tkf.families())
         fonts.sort()
         for f in fonts:
             print(f)
         self.__default_font_name: str = 'Courier'
-        self.__top_lbl = tk.Label(self.__window, text="Ready", bg="black", fg="white")
+        self.__top_lbl: tk.Label = tk.Label(self.__window, text="Ready", bg="black", fg="white")
         self.__top_lbl.config(font=(self.__default_font_name, 22))
         self.__top_lbl.pack(fill=tk.X, ipadx=4, padx=4, side=tk.TOP)
-        self.__center_cnv = tk.Canvas(self.__window, bg="black", height=h - 110, width=w, borderwidth=0, highlightthickness=0)
+        self.__center_cnv: tk.Canvas = tk.Canvas(self.__window, bg="black", height=h - 110, width=w, borderwidth=0, highlightthickness=0)
         self.__center_cnv.pack(fill=tk.X, expand=tk.TRUE)
-        self.__bottom_lbl = tk.Label(self.__window, text="Ready\n\n", bg="black", fg="orange", justify=tk.LEFT)
+        self.__bottom_lbl: tk.Label = tk.Label(self.__window, text="Ready\n\n", bg="black", fg="orange", justify=tk.LEFT)
         self.__bottom_lbl.config(font=(self.__default_font_name, 16))
         self.__bottom_lbl.pack(ipadx=4, padx=4, anchor=tk.S, side=tk.LEFT)
-        self.__clock = TkClock(self.__window)
+        self.__clock: TkClock = TkClock(self.__window, seconds=False, colon=True)
         self.__clock.config(font=(self.__default_font_name, 16), bg="black", fg="orange")
         self.__clock.pack(ipadx=4, padx=4)
         with open(self._config.get_root_path() + os.sep + 'images' + os.sep + 'background.jpg', 'rb') as fp:
@@ -108,36 +109,53 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__window.update()
         self.__cnv_grid = CanvasGrid(MediaPlayerInterfaceImpl.__logger, self.__window, self.__center_cnv, executor)
         self.__cnv_grid.set_listener(self)
+        self.__view: tk.Toplevel = tk.Toplevel(self.__window, bg="black", height=h, width=w, borderwidth=0, highlightthickness=0)
+        self.__view.geometry('%dx%d' % (monitor.width, (monitor.height - 1)))
+        self.__view.geometry('+' + str(monitor.x) + '+' + str(monitor.y))
+        self.__view.wm_attributes('-type', 'dock')
+        self.__view.title("Media player view")
+        self.__view['background'] = 'black'
+        self.__view.maxsize(w, h)
+        self.__view.bind('<Control-q>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_POWER), e))
+        self.__view.bind('<Escape>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_BACK), e))
+        self.__view.bind('<KP_Add>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_VOL_UP), e))
+        self.__view.bind('<KP_Subtract>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_VOL_DOWN), e))
+        self.__view.bind('<Control-KP_Add>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_CH_UP), e))
+        self.__view.bind('<Control-KP_Subtract>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_CH_DOWN), e))
+        for k in range(10):
+            v: str = str(k)
+            self.__view.bind('<KP_%s>' % v,
+                             lambda e, data=v: self.send_control_event(RemoteControlEvent(code=media_api.CODE_CH, data=data), e))
+            self.__view.bind('<Control-KP_%s>' % v,
+                             lambda e, data=v: self.send_control_event(RemoteControlEvent(code=media_api.CODE_VOL, data=data), e))
         MediaPlayerInterfaceImpl.__logger.info('Media player interface configured')
 
-    def _on_key(self, control_event: RemoteControlEvent, event: Any) -> None:
+    def send_control_event(self, control_event: RemoteControlEvent, event: Any = None) -> None:
         if control_event and isinstance(self._listener, ControllerListener):
             MediaPlayerInterfaceImpl.__logger.debug('Forwarding event to listener: %s', control_event)
             listener: ControllerListener = self._listener
             listener.on_control_event(control_event)
 
     def get_view_handle(self) -> int:
-        return self.__center_cnv.winfo_id()
+        return self.__view.winfo_id()
 
     def get_view_height(self) -> int:
-        return self.__center_cnv.winfo_height()
+        return self.__view.winfo_height()
 
     def get_view_width(self) -> int:
-        return self.__center_cnv.winfo_width()
+        return self.__view.winfo_width()
 
-    def __set_grid_visible(self, flag: bool):
+    def set_grid_visible(self, flag: bool):
         if flag:
-            for k in self.__center_cnv.find_all():
-                try:
-                    self.__center_cnv.itemconfigure(k, state='normal')
-                except tk.TclError as ex:
-                    MediaPlayerInterfaceImpl.__logger.error('Id not found: %s' % ex)
+            self.__view.attributes('-' + _FULLSCREEN, False)
+            self.__view.iconify()
+            self.__window.tkraise(aboveThis=self.__view)
+            self.__window.deiconify()
         else:
-            for k in self.__center_cnv.find_all():
-                try:
-                    self.__center_cnv.itemconfigure(k, state='hidden')
-                except tk.TclError as ex:
-                    MediaPlayerInterfaceImpl.__logger.error('Id not found: %s' % ex)
+            self.__view.attributes('-' + _FULLSCREEN, True)
+            self.__window.iconify()
+            self.__view.tkraise(aboveThis=self.__window)
+            self.__view.deiconify()
 
     def get_x(self) -> int:
         if self.__window:
@@ -192,7 +210,9 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
                 self.__window = None
                 self.__active = False
                 if self._listener:
-                    self._listener.on_stop()
+                    self._listener.on_interface_stop()
+                if self.__view:
+                    self.__view.destroy()
                 if self.__window:
                     self.__window.destroy()
 
@@ -208,6 +228,8 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             MediaPlayerInterfaceImpl.__logger.info('Stopping...')
             self.__active = False
             try:
+                if self.__view:
+                    self.__view.destroy()
                 if self.__window:
                     self.__window.quit()
             except Exception as ex:
@@ -235,7 +257,7 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
 
     def set_playing(self, flag: bool):
         self.__playing = flag
-        self.__set_grid_visible(not flag)
+        self.__clock.set_active(not flag)
         MediaPlayerInterfaceImpl.__logger.debug('Setting playing mode: %s', flag)
 
     def refresh(self) -> None:
@@ -295,6 +317,9 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
             MediaPlayerInterfaceImpl.__logger.debug('Displaying empty text at center')
             self.__clear_text_at_center()
 
+    def display_title(self, text: str) -> None:
+        self.__display_at_bottom(text, 'white')
+
     def display_notice(self, text: str) -> None:
         self.__display_at_bottom(text, 'white')
 
@@ -306,12 +331,12 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
 
     def on_cell_validation(self, grid, cell: CanvasGridCell) -> None:
         if self._listener:
-            self._listener.on_validation(grid, cell.get_value())
+            self._listener.on_grid_validation(grid, cell.get_value())
 
     # noinspection PyUnusedLocal
     def on_cell_selection(self, grid, previous: CanvasGridCell, cell: CanvasGridCell) -> None:
         if self._listener:
-            self._listener.on_selection(grid, cell.get_value())
+            self._listener.on_grid_selection(grid, cell.get_value())
 
     def set_grid_cells(self, values: List) -> int:
         self.__cnv_grid.clear()

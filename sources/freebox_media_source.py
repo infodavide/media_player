@@ -38,7 +38,8 @@ _THUMBNAIL_TRIES: int = 3
 _UTF8: str = 'utf8'
 
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
-os.environ["OPENCV_LOG_LEVEL"] = "WARN"
+os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["OPENCV_VIDEOIO_DEBUG"] = "0"
 
 
 class FreeboxMediaCellRenderer(CanvasGridRenderer):
@@ -168,7 +169,7 @@ class FreeboxMediaSource(VlcMediaSource):
         return 'sources' + os.sep + 'images' + os.sep + 'freebox.jpg'
 
     def refresh_interface(self) -> None:
-        if self._interface and self.__media_cell_renderer.is_enabled():
+        if self._interface and not self.is_playing():
             self._interface.refresh()
 
     def open(self) -> None:
@@ -185,14 +186,14 @@ class FreeboxMediaSource(VlcMediaSource):
         for media in self._media_list:
             self._interface.add_grid_cell(position=position, value=media, render=False)
             position = position + 1
-        self._executor.schedule(4.5, self.__media_cell_renderer.set_enabled, True)
-        self._executor.schedule_at_rate(5, 30, self.refresh_interface)
+        self._executor.schedule(2, self.__media_cell_renderer.set_enabled, True)
+        self._executor.schedule_at_rate(3, 30, self.refresh_interface)
 
     def close(self) -> None:
         self.__media_cell_renderer.set_enabled(False)
         super().close()
 
-    def play_media(self, media: Media = None, channel: int = -1) -> None:
+    def play(self, media: Media = None, channel: int = -1) -> None:
         self.__media_cell_renderer.set_enabled(False)
         super().play(media=media, channel=channel)
 

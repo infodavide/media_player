@@ -3,13 +3,12 @@
 import datetime
 import logging
 import threading
-import time
 import tkinter as tk
 import traceback
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict, List
-from id_threading_utils import Executor, Future
+from id_threading_utils import Executor
 from PIL import Image, ImageDraw, ImageTk, ImageFont
 
 DEFAULT_PADDING: int = 4
@@ -199,8 +198,7 @@ class CanvasGridRenderer(ABC):
                     # Resize image to fill the cell keeping the ration
                     image_w, image_h = image.size
                     if image_w > cell_width or image_h > cell_height:
-                        image.thumbnail((cell_width, cell_width), Image.ANTIALIAS)
-                        image_w, image_h = image.size
+                        image.thumbnail((cell_width, cell_height), Image.ANTIALIAS)
                         # unused: image = image.crop((0, 0, cell_width, cell_height))
                     # Put the image on the center of the background image of the cell
                     image_w, image_h = image.size
@@ -320,6 +318,9 @@ class CanvasGrid(object):
     def get_canvas(self) -> tk.Canvas:
         return self.__canvas
 
+    def set_canvas(self, canvas: tk.Canvas) -> None:
+        self.__canvas = canvas
+
     def get_cells(self) -> CanvasGridCells:
         with self.__cells_lock:
             return self.__cells
@@ -405,6 +406,8 @@ class CanvasGrid(object):
         # unused:    self.__canvas.after(50, self.__window.update)
 
     def redraw(self, cell: CanvasGridCell = None, first: int = -1) -> None:
+        if not self.__executor.is_ready():
+            return
         # Draw cell(s) on the new visible area
         cells_count: int = self.get_size()
         real_columns: int = min(cells_count, self.__columns)
@@ -426,7 +429,7 @@ class CanvasGrid(object):
         if end < 0:
             end = cells_count
         now: datetime.datetime = datetime.datetime.now()
-        time_limit: datetime.datetime = now - datetime.timedelta(seconds=2)
+        time_limit: datetime.datetime = now - datetime.timedelta(seconds=20)
         for position in range(start, end + 1):
             cell: CanvasGridCell = self.__get_cell(position)
             if not cell:
@@ -450,7 +453,7 @@ class CanvasGrid(object):
                 self.__margin_y + self.__padding + (cell.get_row() - self.__first_visible_row) * (
                             self.__cell_height + self.__padding)
             )
-            if self.__window:
+            if self.__window and self.__executor.is_ready():
                 self.__executor.submit(self.__renderer.render_cell, self, cell, self.__cell_width, self.__cell_height, True)
 
     def get_selected_cell(self) -> CanvasGridCell:
@@ -655,9 +658,9 @@ class CanvasGrid(object):
                 self.delete_cell(cells_count - 1)
                 cells_count = cells_count - 1
             self.redraw()
-            self.__window.update()
 
     def add_cell(self, position: int = -1, label: str = None, value: Any = None) -> CanvasGridCell:
+        # noinspection PyTypeChecker
         cell: CanvasGridCell = None
         with self.__cells_lock:
             if position < 0:

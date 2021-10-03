@@ -3,7 +3,7 @@
 # Media player HTTP server
 
 import atexit
-import concurrent.futures
+import ctypes
 import logging
 import os
 import pathlib
@@ -32,6 +32,9 @@ controller: MediaPlayerController = None
 event_dispatcher: EventDispatcher = None
 # noinspection PyTypeChecker
 executor: Executor = None
+
+x11 = ctypes.CDLL("libX11.so")
+x11.XInitThreads()
 
 
 def create_rotating_log(path: str) -> logging.Logger:

@@ -162,7 +162,7 @@ MediaList = List[Media]
 
 class ControllerListener(ABC):
     @abstractmethod
-    def on_stop(self) -> None:
+    def on_controller_stop(self) -> None:
         """
         Listener interface used to dispatch stop event.
         """
@@ -237,7 +237,7 @@ class InterfaceListener(ABC):
         return self._config
 
     @abstractmethod
-    def on_validation(self, source, value: Any) -> None:
+    def on_grid_validation(self, source, value: Any) -> None:
         """
         Invoked when cell has been validated or chosen on the interface
         :param source: the source component
@@ -246,7 +246,7 @@ class InterfaceListener(ABC):
         pass
 
     @abstractmethod
-    def on_selection(self, source, value: Any) -> None:
+    def on_grid_selection(self, source, value: Any) -> None:
         """
         Invoked when cell has been selected on the interface
         :param source: the source component
@@ -255,7 +255,7 @@ class InterfaceListener(ABC):
         pass
 
     @abstractmethod
-    def on_stop(self) -> None:
+    def on_interface_stop(self) -> None:
         """
         Listener interface used to dispatch stop event.
         """
@@ -434,6 +434,15 @@ class MediaPlayerInterface:
         pass
 
     @abstractmethod
+    def set_grid_visible(self, flag: bool) -> None:
+        """
+        Sets the the grid visible or not
+        :param flag: True to make the grid visible
+        :return:
+        """
+        pass
+
+    @abstractmethod
     def set_grid_cells(self, values: List) -> int:
         """
         Sets and display a grid using the given sources or media list
@@ -454,6 +463,59 @@ class MediaPlayerInterface:
         pass
 
 
+class MediaSourceListener(ABC):
+    def __init__(self):
+        """
+        Initialize the listener.
+        """
+        super().__init__()
+
+    @abstractmethod
+    def on_source_opened(self, source, media: Media = None) -> None:
+        """
+        Invoked when a media source has been closed
+        :param source: the media source
+        :param media: the media
+        """
+        pass
+
+    @abstractmethod
+    def on_source_close(self, source, media: Media = None) -> None:
+        """
+        Invoked when a media source has been closed
+        :param source: the media source
+        :param media: the media
+        """
+        pass
+
+    @abstractmethod
+    def on_media_paused(self, source, media: Media) -> None:
+        """
+        Invoked when a media source has been paused
+        :param source: the media source
+        :param media: the media
+        """
+        pass
+
+    @abstractmethod
+    def on_media_played(self, source, media: Media) -> None:
+        """
+        Invoked when a media source has been played
+        :param source: the media source
+        :param media: the media
+        """
+        pass
+
+    @abstractmethod
+    def on_media_stopped(self, source, media: Media) -> None:
+        """
+        Invoked when a media source has been stopped
+        :param source: the media source
+        :param media: the media
+        """
+        pass
+
+
 class MediaSource:
     __logger: logging.Logger = None
 
@@ -470,6 +532,8 @@ class MediaSource:
             MediaSource.__logger.setLevel(parent_logger.level)
         MediaSource.__logger.info('Initializing %s', self.__class__.__name__)
         self._config: MediaPlayerConfig = config
+        # noinspection PyTypeChecker
+        self._listener: MediaSourceListener = None
         self._interface: MediaPlayerInterface = interface
         self._executor: Executor = executor
         # noinspection PyTypeChecker
@@ -489,13 +553,26 @@ class MediaSource:
     def get_config(self) -> MediaPlayerConfig:
         return self._config
 
+    def get_listener(self) -> MediaSourceListener:
+        """
+        Returns the listener
+        :return: the listener
+        """
+        return self._listener
+
+    def set_listener(self, value: MediaSourceListener) -> None:
+        """
+        Sets the listener
+        :param value: the listener
+        """
+        self._listener = value
+
     def play(self, media: Media = None, channel: int = -1) -> None:
         """
         Play the media.
         :return: None.
         """
         self._media = media
-        self._interface.set_playing(True)
 
     def stop(self):
         """
@@ -503,7 +580,6 @@ class MediaSource:
         :return: None.
         """
         self._media = None
-        self._interface.set_playing(False)
 
     def close(self) -> None:
         """
@@ -519,7 +595,6 @@ class MediaSource:
         :return: None.
         """
         self._media = None
-        self._interface.set_playing(False)
 
     @abstractmethod
     def is_open(self) -> bool:

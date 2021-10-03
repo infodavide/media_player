@@ -7,9 +7,9 @@ import time
 
 
 class Future(object):
-    def __init__(self, logger: logging.Logger, executor: concurrent.futures.ThreadPoolExecutor):
+    def __init__(self, logger: logging.Logger, executor):
         self.__logger: logging.Logger = logger
-        self.__executor: concurrent.futures.ThreadPoolExecutor = executor
+        self.__executor: Executor = executor
         # noinspection PyTypeChecker
         self.__delegate: concurrent.futures.Future = None
         # noinspection PyTypeChecker
@@ -56,14 +56,17 @@ class Future(object):
         return None
 
     def __submit(self, duration: float):
+        if not self.__executor.is_ready() and self.__timer:
+            self.__timer.cancel()
         if duration <= 0:
             self.__timer = None
-        else:
+        elif self.__executor.is_ready():
             self.__logger.debug('Rescheduling next execution of %s', self.__fn)
             self.__timer = threading.Timer(duration, self.__submit, [duration])
             self.__timer.start()
-        self.__logger.debug('Execution of %s', self.__fn)
-        self.__delegate = self.__executor.submit(self.__fn, *self.__args, **self.__kwargs)
+        if self.__executor.is_ready():
+            self.__logger.debug('Execution of %s', self.__fn)
+            self.__delegate = self.__executor._get_delegate().submit(self.__fn, *self.__args, **self.__kwargs)
 
     def submit(self, duration: float, fn, *args, **kwargs):
         self.__fn = fn
@@ -97,24 +100,32 @@ class Executor(object):
             Executor.__logger.setLevel(parent_logger.level)
         Executor.__logger.info('Initializing %s', self.__class__.__name__)
         self.__executor: concurrent.futures.ThreadPoolExecutor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=thread_name_prefix)
+        self.__ready: bool = True
+
+    def _get_delegate(self):
+        return self.__executor
+
+    def is_ready(self) -> bool:
+        return self.__ready
 
     def submit(self, fn, *args, **kwargs) -> Future:
         Executor.__logger.debug('Submitting: %s', fn)
-        future: Future = Future(Executor.__logger, self.__executor)
+        future: Future = Future(Executor.__logger, self)
         future.submit(-1, fn, *args, **kwargs)
         return future
 
     def schedule(self, delay: float, fn, *args, **kwargs) -> Future:
         Executor.__logger.debug('Scheduling: %s with delay: %s', fn, str(delay))
-        future: Future = Future(Executor.__logger, self.__executor)
+        future: Future = Future(Executor.__logger, self)
         future.schedule(delay, fn, *args, **kwargs)
         return future
 
     def schedule_at_rate(self, delay: float, duration: float, fn, *args, **kwargs) -> Future:
         Executor.__logger.debug('Scheduling at fixed rate: %s with delay: %s and rate: %s', fn, str(delay), str(duration))
-        future: Future = Future(Executor.__logger, self.__executor)
+        future: Future = Future(Executor.__logger, self)
         future.schedule_at_rate(delay, duration, fn, *args, **kwargs)
         return future
 
-    def shutdown(self, wait=True):
-        self.__executor.shutdown(wait)
+    def shutdown(self, wait=False):
+        self.__ready = False
+        self.__executor.shutdown(wait=wait)

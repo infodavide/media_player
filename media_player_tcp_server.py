@@ -184,7 +184,7 @@ class MediaPlayerTcpController(MediaPlayerController):
                 MediaPlayerTcpController.__logger.error(ex)
             finally:
                 if self._listener:
-                    self._listener.on_stop()
+                    self._listener.on_controller_stop()
 
     def restart(self):
         self.stop()

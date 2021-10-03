@@ -4,11 +4,9 @@ import logging
 import os
 import sys
 import traceback
-from abc import ABC
-
 import vlc
-
 import media_api
+from abc import ABC
 from media_api import MediaSource, MediaPlayerInterface, Media
 from media_player_config import MediaPlayerConfig
 from id_threading_utils import Executor
@@ -46,6 +44,8 @@ class VlcMediaSource(MediaSource, ABC):
             if not self._player:
                 self._player = self._instance.media_player_new()
             self._player.set_fullscreen(True)
+            if self._listener:
+                self._listener.on_source_opened(self)
         except Exception as ex:
             VlcMediaSource.__logger.warning("An error occurred while starting VLC")
             exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -69,6 +69,9 @@ class VlcMediaSource(MediaSource, ABC):
             if self._instance:
                 self._instance.release()
                 self._instance = None
+            if self._listener:
+                self._listener.on_source_close(self, self._media)
+            self._media = None
             VlcMediaSource.__logger.info("VLC successfully closed")
         except Exception as ex:
             VlcMediaSource.__logger.warning("An error occurred while closing VLC")
@@ -86,15 +89,21 @@ class VlcMediaSource(MediaSource, ABC):
     def stop(self):
         if self._player and self._player.is_playing():
             self._player.stop()
+            if self._listener:
+                self._listener.on_media_stopped(self, self._media)
             self._media = None
         super().stop()
 
-    def play_media(self, media: Media = None, channel: int = -1) -> None:
+    def play(self, media: Media = None, channel: int = -1) -> None:
         if self._media:
             if self._player.is_playing():
                 self._player.pause()
+                if self._listener:
+                    self._listener.on_media_paused(self, self._media)
             elif self._media:
                 self._player.play()
+                if self._listener:
+                    self._listener.on_media_played(self, self._media)
         if channel >= 0:
             for item in self._media_list:
                 if item.get_channel() == channel:
@@ -104,14 +113,14 @@ class VlcMediaSource(MediaSource, ABC):
             self._media = media
             vlc_media: vlc.Media = self._instance.media_new(media.get_stream_url())
             vlc_media.set_meta(0, media.get_name())
-            self._interface.set_playing(True)
             VlcMediaSource.__logger.info('Playing media: %s', media.get_name())
-            self._interface.display_notice('Playing media: ' + media.get_name())
+            self._interface.set_grid_visible(False)
             self._player.set_xwindow(self._interface.get_view_handle())
             self._player.set_media(vlc_media)
             self._player.set_video_title_display(0, 5000)
             self._player.play()
-            VlcMediaSource.__logger.info('Playing')
+            if self._listener:
+                self._listener.on_media_played(self, self._media)
         else:
             VlcMediaSource.__logger.warning(media_api.MEDIA_NOT_AVAILABLE)
             self._interface.display_warning(media_api.MEDIA_NOT_AVAILABLE)
@@ -128,17 +137,17 @@ class VlcMediaSource(MediaSource, ABC):
     def play_next(self) -> None:
         if self._player:
             if self._media:
-                self.play_media(media=self._media, channel=self._media.get_channel() + 1)
+                self.play(media=self._media, channel=self._media.get_channel() + 1)
             else:
-                self.play_media(channel=1)
+                self.play(channel=1)
         else:
             VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)
 
     def play_previous(self) -> None:
         if self._player:
             if self._media:
-                self.play_media(media=self._media, channel=self._media.get_channel() - 1)
+                self.play(media=self._media, channel=self._media.get_channel() - 1)
             else:
-                self.play_media(channel=1)
+                self.play(channel=1)
         else:
             VlcMediaSource.__logger.warning(media_api.SOURCE_NOT_OPENED)

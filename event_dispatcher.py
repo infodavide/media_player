@@ -14,7 +14,7 @@ from typing import Any, List
 from PIL import Image
 from canvas_grid import CanvasGridRenderer
 from id_classes_utils import subclasses_of, import_files_of_dir
-from media_api import RemoteControlEvent, ControllerListener, MediaSource, InterfaceListener, MediaPlayerController, Media
+from media_api import RemoteControlEvent, ControllerListener, MediaSource, MediaSourceListener, InterfaceListener, MediaPlayerController, Media
 from media_player_config import MediaPlayerConfig
 from media_player_interface import MediaPlayerInterface
 from id_threading_utils import Executor
@@ -46,7 +46,7 @@ class MediaSourceCellRenderer(CanvasGridRenderer):
         return None
 
 
-class EventDispatcher(ControllerListener, InterfaceListener):
+class EventDispatcher(ControllerListener, InterfaceListener, MediaSourceListener):
     __logger: logging.Logger = None
 
     @staticmethod
@@ -78,7 +78,9 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                     continue
                 EventDispatcher.__logger.info('Instantiating source: %s', subclass.__name__)
                 obj: MediaSource = subclass(parent_logger, config, interface, self.__executor)
+                obj.set_listener(self)
                 available_sources.append(obj)
+            available_sources.sort(key=lambda o: o.get_name())
             self.__display_sources()
         except Exception as ex:
             exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -102,22 +104,23 @@ class EventDispatcher(ControllerListener, InterfaceListener):
     def set_controller(self, controller: MediaPlayerController) -> None:
         self.__controller = controller
 
-    def on_validation(self, grid, value: Any) -> None:
+    def on_grid_validation(self, grid, value: Any) -> None:
         EventDispatcher.__logger.debug('Validation of: %s', value)
         if self.__interface:
             if isinstance(value, MediaSource):
                 source: MediaSource = value
                 if self.__source == source:
                     return
+                self.__interface.set_grid_cells([])
                 if self.__source:
                     self.__source.close()
                 self.__source = source
                 self.__source.open()
             elif self.__source and isinstance(value, Media):
                 media: Media = value
-                self.__source.play(media)
+                self.__source.play(media=media)
 
-    def on_selection(self, grid, value: Any) -> None:
+    def on_grid_selection(self, grid, value: Any) -> None:
         EventDispatcher.__logger.debug('Selection of: %s', value)
         if self.__interface:
             if isinstance(value, MediaSource):
@@ -133,17 +136,65 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                         str(datetime.timedelta(seconds=media.get_duration())))
                 self.__interface.display_notice(text)
 
-    def on_stop(self) -> None:
+    def on_controller_stop(self) -> None:
+        if self.__executor:
+            EventDispatcher.__logger.debug('Stopping executor')
+            self.__executor.shutdown(wait=False)
+            self.__executor = None
         if self.__source:
             EventDispatcher.__logger.debug('Closing source: %s', self.__source.get_name())
             self.__source.close()
             self.__source = None
         if self.__interface:
+            EventDispatcher.__logger.debug('Stopping interface')
             self.__interface.stop()
             self.__interface = None
+
+    def on_interface_stop(self) -> None:
+        if self.__executor:
+            EventDispatcher.__logger.debug('Stopping executor')
+            self.__executor.shutdown(wait=False)
+            self.__executor = None
+        if self.__source:
+            EventDispatcher.__logger.debug('Closing source: %s', self.__source.get_name())
+            self.__source.close()
+            self.__source = None
         if self.__controller:
-            EventDispatcher.__logger.debug('Stop event forwarded to controller')
+            EventDispatcher.__logger.debug('Stopping controller')
             self.__controller.stop()
+            self.__controller = None
+
+    def on_source_opened(self, source: MediaSource, media: Media = None) -> None:
+        EventDispatcher.__logger.debug('Source opened: %s', source.get_name())
+        if self.__interface:
+            self.__interface.set_playing(False)
+            if media:
+                self.__interface.display_notice('Using media: ' + media.get_name())
+            else:
+                self.__interface.display_notice('Using source: ' + source.get_name())
+
+    def on_source_close(self, source: MediaSource, media: Media = None) -> None:
+        EventDispatcher.__logger.debug('Source closed: %s', source.get_name())
+        self.__source = None
+        if self.__interface:
+            self.__interface.set_playing(False)
+            self.__interface.set_grid_visible(True)
+            self.__display_sources()
+            self.__interface.display_notice('No source selected')
+
+    def on_media_paused(self, source: MediaSource, media: Media) -> None:
+        if self.__interface and media:
+            self.__interface.display_notice(media.get_name() + ' paused')
+
+    def on_media_played(self, source: MediaSource, media: Media) -> None:
+        self.__interface.set_playing(True)
+        if self.__interface and media:
+            self.__interface.display_notice('Playing ' + media.get_name())
+
+    def on_media_stopped(self, source: MediaSource, media: Media) -> None:
+        if self.__interface and media:
+            self.__interface.set_playing(False)
+            self.__interface.display_notice(media.get_name() + ' stopped')
 
     def on_control_event(self, event: RemoteControlEvent) -> bytes:
         result: bytes = media_api.RESPONSE_ACK
@@ -191,14 +242,10 @@ class EventDispatcher(ControllerListener, InterfaceListener):
                     EventDispatcher.__logger.debug('Closing source: %s', self.__source.get_name())
                     self.__source.close()
                     self.__source = None
-                if event.get_code() == media_api.CODE_BACK:
-                    self.__display_sources()
-                else:
+                if event.get_code() != media_api.CODE_BACK:
                     if numeric_data and 0 <= numeric_data < len(available_sources):
                         self.__source = available_sources[int(event.get_data())]
                         EventDispatcher.__logger.debug('Opening source: %s', self.__source.get_name())
-                        if self.__interface:
-                            self.__interface.display_notice('Using source: ' + self.__source.get_name())
                         self.__source.open()
                     else:
                         EventDispatcher.__logger.warning('Source: %s not found', event.get_data())
@@ -207,7 +254,6 @@ class EventDispatcher(ControllerListener, InterfaceListener):
             elif self.__source:
                 if event.get_code() == media_api.CODE_BACK or event.get_code() == media_api.CODE_STOP:
                     self.__source.stop()
-                    self.__interface.set_playing(False)
                 elif event.get_code() == media_api.CODE_CH and event.get_data():
                     self.__source.play(channel=numeric_data)
                 elif event.get_code() == media_api.CODE_VOL and event.get_data():

@@ -35,43 +35,56 @@ How to start/stop the clock widget:
 class TkClock(tkinter.Label):
     """ Class that contains the clock widget and clock refresh """
 
-    def __init__(self, parent=None, seconds=True, colon=False):
+    def __init__(self, parent=None, seconds: bool = True, colon: bool = False):
         """
         Create and place the clock widget into the parent element
         It's an ordinary Label element with two additional features.
         """
         tkinter.Label.__init__(self, parent)
-
-        self.display_seconds = seconds
+        self.__active: bool = True
+        self.display_seconds: bool = seconds
         if self.display_seconds:
             self.time = time.strftime('%H:%M:%S')
         else:
             self.time = time.strftime('%I:%M %p').lstrip('0')
-        self.display_time = self.time
+        self.display_time: str = self.time
         self.configure(text=self.display_time)
-
         if colon:
             self.blink_colon()
+        if self.display_seconds:
+            self.after(200, self.tick)
+        else:
+            self.after(15000, self.tick)
 
-        self.after(200, self.tick)
+    def set_active(self, flag: bool) -> None:
+        self.__active = flag
+
+    def is_active(self) -> bool:
+        return self.__active
 
     def tick(self):
         """ Updates the display clock every 200 milliseconds """
+        if self.__active:
+            new_time: str = None
+            if self.display_seconds:
+                new_time = time.strftime('%H:%M:%S')
+            else:
+                new_time = time.strftime('%I:%M %p').lstrip('0')
+            if new_time != self.time:
+                self.time = new_time
+                self.display_time = self.time
+                self.config(text=self.display_time)
         if self.display_seconds:
-            new_time = time.strftime('%H:%M:%S')
+            self.after(200, self.tick)
         else:
-            new_time = time.strftime('%I:%M %p').lstrip('0')
-        if new_time != self.time:
-            self.time = new_time
-            self.display_time = self.time
-            self.config(text=self.display_time)
-        self.after(200, self.tick)
+            self.after(15000, self.tick)
 
     def blink_colon(self):
         """ Blink the colon every second """
-        if ':' in self.display_time:
-            self.display_time = self.display_time.replace(':', ' ')
-        else:
-            self.display_time = self.display_time.replace(' ', ':', 1)
-        self.config(text=self.display_time)
+        if self.__active:
+            if ':' in self.display_time:
+                self.display_time = self.display_time.replace(':', ' ')
+            else:
+                self.display_time = self.display_time.replace(' ', ':', 1)
+            self.config(text=self.display_time)
         self.after(1000, self.blink_colon)
