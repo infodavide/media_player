@@ -109,13 +109,13 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__window.update()
         self.__cnv_grid = CanvasGrid(MediaPlayerInterfaceImpl.__logger, self.__window, self.__center_cnv, executor)
         self.__cnv_grid.set_listener(self)
-        self.__view: tk.Toplevel = tk.Toplevel(self.__window, bg="black", height=h, width=w, borderwidth=0, highlightthickness=0)
-        self.__view.geometry('%dx%d' % (monitor.width, (monitor.height - 1)))
-        self.__view.geometry('+' + str(monitor.x) + '+' + str(monitor.y))
-        self.__view.wm_attributes('-type', 'dock')
-        self.__view.title("Media player view")
+        self.__view: tk.Frame= tk.Frame(self.__window, bg="black", height=h, width=w, borderwidth=0, highlightthickness=0)
+        #self.__view.geometry('%dx%d' % (monitor.width, (monitor.height - 1)))
+        #self.__view.geometry('+' + str(monitor.x) + '+' + str(monitor.y))
+        #self.__view.wm_attributes('-type', 'dock')
+        #self.__view.title("Media player view")
         self.__view['background'] = 'black'
-        self.__view.maxsize(w, h)
+        #self.__view.maxsize(w, h)
         self.__view.bind('<Control-q>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_POWER), e))
         self.__view.bind('<Escape>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_BACK), e))
         self.__view.bind('<KP_Add>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_VOL_UP), e))
@@ -147,15 +147,9 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
 
     def set_grid_visible(self, flag: bool):
         if flag:
-            self.__view.attributes('-' + _FULLSCREEN, False)
-            self.__view.iconify()
-            self.__window.tkraise(aboveThis=self.__view)
-            self.__window.deiconify()
+            self.__view.after(1, self.__view.place_forget())
         else:
-            self.__view.attributes('-' + _FULLSCREEN, True)
-            self.__window.iconify()
-            self.__view.tkraise(aboveThis=self.__window)
-            self.__view.deiconify()
+            self.__view.after(1, lambda: self.__view.place(relx=0.5, rely=0.5, anchor=tk.CENTER))
 
     def get_x(self) -> int:
         if self.__window:

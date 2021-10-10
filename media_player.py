@@ -15,7 +15,7 @@ from logging.handlers import RotatingFileHandler
 from media_player_config import MediaPlayerConfig
 from media_player_interface import MediaPlayerInterface, MediaPlayerInterfaceImpl
 from media_player_tcp_server import MediaPlayerTcpController
-from event_dispatcher import EventDispatcher
+from control_event_handler import ControlEventHandler
 from media_api import MediaPlayerController
 from id_threading_utils import Executor
 
@@ -29,7 +29,7 @@ interface: MediaPlayerInterface = None
 # noinspection PyTypeChecker
 controller: MediaPlayerController = None
 # noinspection PyTypeChecker
-event_dispatcher: EventDispatcher = None
+event_dispatcher: ControlEventHandler = None
 # noinspection PyTypeChecker
 executor: Executor = None
 
@@ -128,7 +128,7 @@ def configure():
         logger.error(ex4)
         sys.exit(1)
     try:
-        event_dispatcher = EventDispatcher(logger, config, interface, executor)
+        event_dispatcher = ControlEventHandler(logger, config, interface, executor)
         controller = MediaPlayerTcpController(logger, config, event_dispatcher)
         event_dispatcher.set_controller(controller)
     except Exception as ex3:

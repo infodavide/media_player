@@ -73,6 +73,11 @@ class WebBrowserLifespanHandler:
         WebBrowserLifespanHandler.__logger.debug('DoClose')
         return True
 
+    # noinspection PyPep8Naming
+    def OnBeforePopup(self, browser, frame, target_url, target_frame_name, target_disposition, user_gesture, popup_features, window_info_out, client, browser_settings_out, no_javascript_access_out):
+        WebBrowserLifespanHandler.__logger.debug('OnBeforePopup')
+        return True
+
 
 class WebBrowserFocusHandler:
     __logger: logging.Logger = None

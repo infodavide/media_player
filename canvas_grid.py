@@ -219,9 +219,9 @@ class CanvasGridRenderer(ABC):
             if result:
                 grid.get_canvas().after(50, grid.update_cell_image, cell, result)
             else:
-                cell.get_image_entry().set_last_update(datetime.datetime.now())
                 cell.get_image_entry().set_updating(False)
                 CanvasGridRenderer.__logger.warning('Invalid image to update on canvas for cell: %s', cell)
+            cell.get_image_entry().set_last_update(datetime.datetime.now())
         except:  # catch all
             CanvasGridRenderer.__logger.error(traceback.format_exc())
 
@@ -398,7 +398,6 @@ class CanvasGrid(object):
                 # Select the cell if no cell is currently selected
                 if self.get_selected_position() < 0:
                     self.__select_position(0)
-            entry.set_last_update(datetime.datetime.now())
             entry.set_updating(False)
         else:
             CanvasGrid.__logger.warning('No image for cell: %s', cell)
