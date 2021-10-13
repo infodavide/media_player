@@ -2,6 +2,8 @@
 # Web browser Media definition
 import json
 import logging
+import time
+import tkinter as tk
 import media_api
 import os
 import platform
@@ -169,6 +171,7 @@ class WebBrowserMediaSource(MediaSource):
             # as in upstream cefclient (Issue #240).
             "enable-begin-frame-scheduling": "",
             "disable-surfaces": "",  # This is required for PDF ext to work
+            "disable-site-isolation-trials": ""
         }
         browser_settings = {
             "accept_language_list": self.__web_browser_config['accept_languages'],
@@ -189,7 +192,13 @@ class WebBrowserMediaSource(MediaSource):
         self._instance.SetClientHandler(self.__focus_handler)
         if self._listener:
             self._listener.on_source_opened(self)
-        cef.MessageLoop()
+        view: tk.Widget = self._interface.get_view()
+        view.after(20, self.__work)
+
+    def __work(self):
+        cef.MessageLoopWork()
+        view: tk.Widget = self._interface.get_view()
+        view.after(200, self.__work)
 
     def close(self):
         if self._instance:

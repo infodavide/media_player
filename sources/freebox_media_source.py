@@ -169,8 +169,10 @@ class FreeboxMediaSource(VlcMediaSource):
         return 'sources' + os.sep + 'images' + os.sep + 'freebox.jpg'
 
     def refresh_interface(self) -> None:
-        if self._interface and not self.is_playing():
+        if self._instance and self._interface and not self.is_playing():
             self._interface.refresh()
+        if self._instance:
+            self._executor.schedule(30, self.refresh_interface)
 
     def open(self) -> None:
         super().open()
@@ -187,7 +189,7 @@ class FreeboxMediaSource(VlcMediaSource):
             self._interface.add_grid_cell(position=position, value=media, render=False)
             position = position + 1
         self._executor.schedule(2, self.__media_cell_renderer.set_enabled, True)
-        self._executor.schedule_at_rate(3, 30, self.refresh_interface)
+        self._executor.schedule(3, self.refresh_interface)
 
     def close(self) -> None:
         self.__media_cell_renderer.set_enabled(False)

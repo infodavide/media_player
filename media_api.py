@@ -309,6 +309,13 @@ class MediaPlayerInterface:
         pass
 
     @abstractmethod
+    def get_view(self) -> Any:
+        """
+        Return the view widget.
+        """
+        pass
+
+    @abstractmethod
     def get_view_handle(self) -> int:
         """
         Return the handle of the view.
