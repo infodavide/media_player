@@ -7,6 +7,7 @@ import ctypes
 import logging
 import os
 import pathlib
+import platform
 import signal
 import sys
 import traceback
@@ -33,8 +34,13 @@ event_dispatcher: ControlEventHandler = None
 # noinspection PyTypeChecker
 executor: Executor = None
 
-x11 = ctypes.CDLL("libX11.so")
-x11.XInitThreads()
+if platform.machine() not in ('armv7l', 'armv6l'):
+    # noinspection PyBroadException
+    try:
+        x11 = ctypes.CDLL("libX11.so")
+        x11.XInitThreads()
+    except:  # catch all
+        print('X11 XInitThreads failed')
 
 
 def create_rotating_log(path: str) -> logging.Logger:

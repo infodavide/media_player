@@ -3,11 +3,13 @@
 import datetime
 import io
 import logging
+import media_api
 import os
+import pathlib
+import platform
 import pyautogui
 import sys
 import traceback
-import media_api
 
 from abc import ABC
 from typing import Any, List
@@ -20,7 +22,7 @@ from media_player_interface import MediaPlayerInterface
 from id_threading_utils import Executor
 
 available_sources: List[MediaSource] = list()
-import_files_of_dir('sources')
+import_files_of_dir(str(pathlib.Path(__file__).parent) + os.sep + 'sources')
 
 
 class MediaSourceCellRenderer(CanvasGridRenderer):
@@ -40,6 +42,7 @@ class MediaSourceCellRenderer(CanvasGridRenderer):
             return
         source: MediaSource = value
         if source.get_image_path():
+            MediaSourceCellRenderer.__logger.debug('Rendering image a: %s', source.get_image_path())
             image_path: str = self.__config.get_root_path() + os.sep + source.get_image_path()
             with open(image_path, 'rb') as fp:
                 return Image.open(io.BytesIO(fp.read()))
@@ -53,6 +56,10 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
     def is_pad_event(event: RemoteControlEvent) -> bool:
         return event.get_code() == media_api.CODE_OK or event.get_code() == media_api.CODE_LEFT or event.get_code() == media_api.CODE_RIGHT or event.get_code() == media_api.CODE_UP or event.get_code() == media_api.CODE_DOWN
 
+    @staticmethod
+    def is_raspberry_pi() -> bool:
+        return platform.machine() in ('armv7l', 'armv6l')
+
     def __init__(self, parent_logger: logging.Logger, config: MediaPlayerConfig, interface: MediaPlayerInterface, executor: Executor, controller: MediaPlayerController = None):
         """
         Initialize the event dispatcher.
@@ -63,6 +70,7 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
             for handler in parent_logger.handlers:
                 ControlEventHandler.__logger.addHandler(handler)
             ControlEventHandler.__logger.setLevel(parent_logger.level)
+        ControlEventHandler.__logger.debug('Platform: %s', platform.machine())
         self.__interface: MediaPlayerInterface = interface
         self.__interface.set_listener(self)
         self.__controller: MediaPlayerController = controller
@@ -217,14 +225,14 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
                 self.__pending_event = None
             ControlEventHandler.__logger.debug('Processing received: %s', event)
             # Power or return from the main screen
-            if event.get_code() == media_api.CODE_POWER or (not self.__source and event.get_code() == media_api.CODE_BACK):
+            if not self.__source and event.get_code() == media_api.CODE_BACK:
+                ControlEventHandler.__logger.debug('No source selected')
+            elif event.get_code() == media_api.CODE_POWER:
                 ControlEventHandler.__logger.debug('Power event received')
-                if self.__source:
-                    self.__source.close()
-                if self.__controller:
+                if ControlEventHandler.is_raspberry_pi():
+                    os.system("sudo shutdown now -fh")
+                elif self.__controller:
                     self.__controller.stop()
-                if self.__interface:
-                    self.__interface.stop()
             elif event.get_code() == media_api.CODE_OK:
                 pyautogui.press('enter')
             elif event.get_code() == media_api.CODE_LEFT:

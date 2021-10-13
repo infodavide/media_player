@@ -29,65 +29,70 @@ class _TcpHandler(socketserver.BaseRequestHandler):
         self.__logger.info('Initializing %s', self.__class__.__name__)
         super().__init__(request, client_address, server)
 
+    def setup(self):
+        self.__logger.debug('Setup')
+        return socketserver.BaseRequestHandler.setup(self)
+
     def handle(self):
         self.request.settimeout(15)
         self.request.setblocking(True)
         while self.__controller.is_running():
-            try:
-                packet: bytearray = self.__pending_data + self.request.recv(512)
-                if not packet:
-                    break
-                length: int = len(packet)
-                if length == 0:
-                    continue
-                data: bytearray = bytearray()
-                for i, val in enumerate(packet):
-                    if val == 0x0D and i > 1 and packet[i - 1] == 0x0A:
-                        data.extend(packet[0:i - 1])
-                        self.__pending_data.clear()
-                        self.__pending_data.extend(packet[i + 1:])
-                        break
-                if len(data) == 0:
-                    continue
-                self.__logger.debug('Event received from {}: {}'.format(self.client_address[0], data))
-                code: int
-                event: RemoteControlEvent = RemoteControlEvent(data[0])
-                if len(data) > 1:
-                    event.set_data(data[1:].decode('ascii'))
-                elif 0x20 <= data[0] <= 0x7E:  # A valid ASCII character
-                    event.set_data(data.decode('ascii'))
-                self.__logger.debug('Dispatching event: %s', event)
-                if self.__controller.get_listener():
-                    response: bytes = self.__controller.get_listener().on_control_event(event)
-                    if response and len(response) > 0:
-                        self.request.send(response)
+            response: bytes = b''
+            if self.__controller.is_running():
+                try:
+                    packet: bytearray = self.__pending_data + self.request.recv(512)
+                    if not packet:
+                        return
+                    length: int = len(packet)
+                    if length == 0:
+                        return
+                    data: bytearray = bytearray()
+                    for i, val in enumerate(packet):
+                        if val == 0x0A and i > 1 and packet[i - 1] == 0x0D:
+                            data.extend(packet[0:i - 1])
+                            self.__pending_data.clear()
+                            self.__pending_data.extend(packet[i + 1:])
+                            break
+                    if len(data) == 0:
+                        return
+                    self.__logger.debug('Event received from {}: {}'.format(self.client_address[0], data))
+                    code: int
+                    event: RemoteControlEvent = RemoteControlEvent(data[0])
+                    if len(data) > 1:
+                        event.set_data(data[1:].decode('ascii'))
+                    elif 0x20 <= data[0] <= 0x7E:  # A valid ASCII character
+                        event.set_data(data.decode('ascii'))
+                    self.__logger.debug('Dispatching event: %s', event)
+                    if self.__controller.get_listener():
+                        response = self.__controller.get_listener().on_control_event(event)
                     else:
-                        self.request.send(media_api.RESPONSE_ACK)
-                else:
-                    self.__logger.warning('Event not processed')
-                    self.request.send(media_api.RESPONSE_NACK)
-            except socket.timeout:
-                self.__logger.warning('Client connection timeout')
-                break
-            except ConnectionResetError:
-                self.__logger.warning('Client connection closed')
-                break
-            except Exception as ex:
-                self.__logger.error('Error: %s' % ex)
-                exc_type, exc_value, exc_traceback = sys.exc_info()
-                traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
-                self.__logger.error(ex)
-                self.request.send(media_api.RESPONSE_NACK)
-        self.__logger.debug('Connection closed with: %s', self.client_address[0])
+                        self.__logger.warning('Event not processed')
+                        response = media_api.RESPONSE_NACK
+                except socket.timeout:
+                    self.__logger.warning('Client connection timeout')
+                    return
+                except ConnectionResetError:
+                    self.__logger.warning('Client connection closed')
+                    return
+                except Exception as ex:
+                    self.__logger.error('Error: %s' % ex)
+                    exc_type, exc_value, exc_traceback = sys.exc_info()
+                    traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
+                    self.__logger.error(ex)
+                    response = media_api.RESPONSE_NACK
+                if not response and len(response) == 0:
+                    response = media_api.RESPONSE_NACK
+                self.__logger.debug('Sending response: %s', response)
+                self.request.send(response)
 
 
 class _TcpServer(socketserver.TCPServer):
     def __init__(self, server_address, controller, logger):
         self.__controller = controller
         self.__logger: logging.Logger = logger
-        socketserver.TCPServer.allow_reuse_address = True
+        socketserver.TCPServer.allow_reuse_address = False
         socketserver.TCPServer.timeout = 2
-        socketserver.TCPServer.request_queue_size = 1
+        socketserver.TCPServer.request_queue_size = 5
         super().__init__(server_address, _TcpHandler)
 
     def finish_request(self, request, client_address):
@@ -139,7 +144,6 @@ class MediaPlayerTcpController(MediaPlayerController):
                 self.__server = server
                 while self.__active:
                     server.handle_request()
-                    time.sleep(0.2)
         except TypeError as ex:
             MediaPlayerTcpController.__logger.error('Error: %s' % ex)
             exc_type, exc_value, exc_traceback = sys.exc_info()

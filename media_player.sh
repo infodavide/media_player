@@ -1,5 +1,5 @@
 #!/bin/bash
-BASE_DIR="/opt/mediaplayer"
+BASE_DIR="/opt/media_player"
 GIT_BRANCH="master"
 USER="mediaplayer"
 UPDATE_DATE_FILE="$BASE_DIR/media_player_update.dat"

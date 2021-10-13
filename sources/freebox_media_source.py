@@ -1,5 +1,7 @@
 # -*- coding: utf-*-
 # VLC Media API definition
+import urllib
+
 import cv2
 import datetime
 import json
@@ -8,8 +10,6 @@ import os
 import sys
 import time
 import traceback
-import urllib.parse
-import urllib.request
 import requests
 from typing import Any, Dict
 from PIL import Image
@@ -70,6 +70,7 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
             # noinspection PyTypeChecker
             result: Image = None
             url: str = media.get_stream_url()
+            FreeboxMediaCellRenderer.__logger.debug('Rendering image at: %s', url)
             if 'flavour=' in url:
                 url = url.replace('flavour=hd', 'flavour=sd')
             if self.__enabled:
@@ -110,7 +111,7 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
                     binary_response: requests.Response = None
                     # noinspection PyBroadException
                     try:
-                        binary_response = requests.get(media.get_image_url(), stream=True)
+                        binary_response = requests.get(media.get_image_url(), stream=True, timeout=0.2)
                         media.set_image(Image.open(binary_response.raw))
                         result = media.get_image()
                     except:  # catch all
@@ -123,20 +124,23 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
                 # Loading media title
                 # noinspection PyBroadException
                 try:
-                    with urllib.request.urlopen(url) as json_response:
-                        data = json.loads(json_response.read().decode(_UTF8))['result']
-                        for k, v in data.items():
-                            if 'title' in v:
-                                media.set_title(v['title'])
-                                if 'duration' in v:
-                                    media.set_duration(v['duration'])
-                                break
+                    json_response = requests.get(url, stream=False, timeout=0.2)
+                    data = json_response.json()['result']
+                    for k, v in data.items():
+                        if 'title' in v:
+                            media.set_title(v['title'])
+                            if 'duration' in v:
+                                media.set_duration(v['duration'])
+                            break
                 except:  # catch all
                     FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
                     # noinspection PyTypeChecker
                     media.set_title(None)
                     # noinspection PyTypeChecker
                     media.set_duration(None)
+                finally:
+                    if json_response:
+                        json_response.close()
             return result
         return None
 
@@ -230,8 +234,8 @@ class FreeboxMediaSource(VlcMediaSource):
         if expiration is None or expiration < now:
             FreeboxMediaSource.__logger.debug('Retrieving media list from: %s', _FREEBOX_STREAMS)
             media_list: dict = dict()
-            with urllib.request.urlopen(_FREEBOX_CHANNELS) as response:
-                data = json.loads(response.read().decode(_UTF8))['result']
+            with requests.get(_FREEBOX_CHANNELS, timeout=0.2) as response:
+                data = response.json()['result']
                 for k, v in data.items():
                     if 'name' not in v or v['name'] in self.__freebox_config['filters']:
                         continue
@@ -239,8 +243,8 @@ class FreeboxMediaSource(VlcMediaSource):
                     if 'logo_url' in v:
                         media.set_image_url(_HTTP_PREFIX + _FREEBOX_HOST + v['logo_url'])
                     media_list[media.get_name()] = media
-            with urllib.request.urlopen(_FREEBOX_STREAMS) as response:
-                for line in response.read().decode(_UTF8).splitlines():
+            with requests.get(_FREEBOX_STREAMS, timeout=0.2) as response:
+                for line in response.text.splitlines():
                     line = line.strip()
                     if len(line) == 0 or line.startswith('#EXTM3U') or '&flavour=ld' in line:
                         continue
