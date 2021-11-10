@@ -21,6 +21,14 @@ from media_player_config import MediaPlayerConfig
 from media_player_interface import MediaPlayerInterface
 from id_threading_utils import Executor
 
+_STOPPING_EXECUTOR_MSG: str = 'Stopping executor'
+_STOPPING_CONTROLLER_MSG: str = 'Stopping controller'
+_STOPPING_INTERFACE_MSG: str = 'Stopping interface'
+_CLOSING_SOURCE_MSG: str = 'Closing source: %s'
+_NO_SOURCE_SELECTED_MSG: str = 'No source selected'
+_SOURCE_NOT_FOUND_MSG: str = 'Source: %s not found'
+_AN_ERROR_OCCURRED_MSG: str = 'An error occurred: %s'
+
 available_sources: List[MediaSource] = list()
 import_files_of_dir(str(pathlib.Path(__file__).parent) + os.sep + 'sources')
 
@@ -94,7 +102,7 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
             exc_type, exc_value, exc_traceback = sys.exc_info()
             traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
             ControlEventHandler.__logger.error(ex)
-            self.__interface.display_error('An error occurred: ' + repr(ex))
+            self.__interface.display_error(_AN_ERROR_OCCURRED_MSG % repr(ex))
 
     def __display_sources(self):
         self.__interface.set_cell_renderer(self.__source_cell_renderer)
@@ -146,29 +154,29 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
 
     def on_controller_stop(self) -> None:
         if self.__executor:
-            ControlEventHandler.__logger.debug('Stopping executor')
+            ControlEventHandler.__logger.debug(_STOPPING_EXECUTOR_MSG)
             self.__executor.shutdown(wait=False)
             self.__executor = None
         if self.__source:
-            ControlEventHandler.__logger.debug('Closing source: %s', self.__source.get_name())
+            ControlEventHandler.__logger.debug(_CLOSING_SOURCE_MSG, self.__source.get_name())
             self.__source.close()
             self.__source = None
         if self.__interface:
-            ControlEventHandler.__logger.debug('Stopping interface')
+            ControlEventHandler.__logger.debug(_STOPPING_INTERFACE_MSG)
             self.__interface.stop()
             self.__interface = None
 
     def on_interface_stop(self) -> None:
         if self.__executor:
-            ControlEventHandler.__logger.debug('Stopping executor')
+            ControlEventHandler.__logger.debug(_STOPPING_EXECUTOR_MSG)
             self.__executor.shutdown(wait=False)
             self.__executor = None
         if self.__source:
-            ControlEventHandler.__logger.debug('Closing source: %s', self.__source.get_name())
+            ControlEventHandler.__logger.debug(_CLOSING_SOURCE_MSG, self.__source.get_name())
             self.__source.close()
             self.__source = None
         if self.__controller:
-            ControlEventHandler.__logger.debug('Stopping controller')
+            ControlEventHandler.__logger.debug(_STOPPING_CONTROLLER_MSG)
             self.__controller.stop()
             self.__controller = None
 
@@ -188,7 +196,7 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
             self.__interface.set_playing(False)
             self.__interface.set_grid_visible(True)
             self.__display_sources()
-            self.__interface.display_notice('No source selected')
+            self.__interface.display_notice(_NO_SOURCE_SELECTED_MSG)
 
     def on_media_paused(self, source: MediaSource, media: Media) -> None:
         if self.__interface and media:
@@ -226,9 +234,8 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
             ControlEventHandler.__logger.debug('Processing received: %s', event)
             # Power or return from the main screen
             if not self.__source and event.get_code() == media_api.CODE_BACK:
-                ControlEventHandler.__logger.debug('No source selected')
+                ControlEventHandler.__logger.debug(_NO_SOURCE_SELECTED_MSG)
             elif event.get_code() == media_api.CODE_POWER:
-                ControlEventHandler.__logger.debug('Power event received')
                 if ControlEventHandler.is_raspberry_pi():
                     os.system("sudo shutdown now -fh")
                 elif self.__controller:
@@ -245,10 +252,9 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
                 pyautogui.press('down')
             # Go to source if no media is played
             elif event.get_code() == media_api.CODE_SOURCE or (self.__source and event.get_code() == media_api.CODE_BACK and not self.__source.is_playing()):
-                ControlEventHandler.__logger.debug('Source event received')
                 self.__interface.set_cell_renderer(self.__source_cell_renderer)
                 if self.__source:
-                    ControlEventHandler.__logger.debug('Closing source: %s', self.__source.get_name())
+                    ControlEventHandler.__logger.debug(_CLOSING_SOURCE_MSG, self.__source.get_name())
                     self.__source.close()
                     self.__source = None
                 if event.get_code() != media_api.CODE_BACK:
@@ -257,9 +263,9 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
                         ControlEventHandler.__logger.debug('Opening source: %s', self.__source.get_name())
                         self.__source.open()
                     else:
-                        ControlEventHandler.__logger.warning('Source: %s not found', event.get_data())
+                        ControlEventHandler.__logger.warning(_SOURCE_NOT_FOUND_MSG, event.get_data())
                         if self.__interface:
-                            self.__interface.display_warning('Source: %s not found' % event.get_data())
+                            self.__interface.display_warning(_SOURCE_NOT_FOUND_MSG % event.get_data())
             elif self.__source:
                 if event.get_code() == media_api.CODE_BACK or event.get_code() == media_api.CODE_STOP:
                     self.__source.stop()
@@ -282,7 +288,7 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
                         self.__source.set_volume(current_volume - 1)
                     self.__interface.display_notice('Volume: %s' % self.__source.get_volume())
             else:
-                ControlEventHandler.__logger.debug('No source selected')
+                ControlEventHandler.__logger.debug(_NO_SOURCE_SELECTED_MSG)
                 if self.__interface:
                     self.__interface.display_warning('A source must be selected before sending commands.')
         except Exception as ex:
@@ -291,6 +297,6 @@ class ControlEventHandler(ControllerListener, InterfaceListener, MediaSourceList
             traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
             ControlEventHandler.__logger.error(ex)
             if self.__interface:
-                self.__interface.display_error('An error occurred: ' + repr(ex))
+                self.__interface.display_error(_AN_ERROR_OCCURRED_MSG % repr(ex))
             return media_api.RESPONSE_NACK
         return result

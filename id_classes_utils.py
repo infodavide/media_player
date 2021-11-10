@@ -26,6 +26,8 @@ def import_files_of_dir(path: str) -> None:
     :return:
     """
     __globals = globals()
+    if not os.path.isdir(path):
+        return
     sys.path.append(path)
     for file in os.listdir(path):
         if file.startswith('_') or not file.lower().endswith('.py'):

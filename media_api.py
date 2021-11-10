@@ -78,7 +78,7 @@ class RemoteControlEvent(object):
             return self.get_data()
         elif isinstance(self.get_data(), str) and self.get_data().isnumeric():
             return int(self.get_data())
-        return None
+        return 0
 
     def __str__(self):
         return super().__str__() + ',' + str(self.__code) + ':' + str(self.__data)
@@ -93,19 +93,19 @@ class Media(object):
         self.__title: str = title
         self.__duration: int = 0
         self.__image: Image = image
-        self.__image_url: str = image_url
+        self.__properties: dict = dict()
 
     def get_channel(self) -> int:
         return self.__channel
+
+    def get_properties(self) -> dict:
+        return self.__properties
 
     def get_stream_id(self) -> str:
         return self.__stream_id
 
     def get_image(self) -> Image:
         return self.__image
-
-    def get_image_url(self) -> str:
-        return self.__image_url
 
     def get_stream_url(self) -> str:
         return self.__stream_url
@@ -124,9 +124,6 @@ class Media(object):
 
     def set_image(self, value: Image) -> None:
         self.__image = value
-
-    def set_image_url(self, value: str) -> None:
-        self.__image_url = value
 
     def set_channel(self, value: int) -> None:
         self.__channel = value

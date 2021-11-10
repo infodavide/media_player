@@ -23,6 +23,7 @@ from typing import Any, List
 from media_player_config import MediaPlayerConfig
 from media_api import RemoteControlEvent, MediaPlayerInterface, Media, MediaSource, ControllerListener
 from canvas_grid import CanvasGrid, CanvasGridListener, CanvasGridCell, CanvasGridRenderer
+from id_network_utils import find_ip_v4
 from id_threading_utils import Executor
 from id_tk import TkClock
 from PIL import Image, ImageTk
@@ -91,16 +92,20 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         for f in fonts:
             print(f)
         self.__default_font_name: str = 'Courier'
-        self.__top_lbl: tk.Label = tk.Label(self.__window, text="Ready", bg="black", fg="white")
+        ipv4: str = find_ip_v4()
+        if ipv4:
+            self.__top_lbl: tk.Label = tk.Label(self.__window, text='Ready ('+ipv4+')', bg='black', fg='white')
+        else:
+            self.__top_lbl: tk.Label = tk.Label(self.__window, text='Ready', bg='black', fg='white')
         self.__top_lbl.config(font=(self.__default_font_name, 22))
         self.__top_lbl.pack(fill=tk.X, ipadx=4, padx=4, side=tk.TOP)
-        self.__center_cnv: tk.Canvas = tk.Canvas(self.__window, bg="black", height=h - 110, width=w, borderwidth=0, highlightthickness=0)
+        self.__center_cnv: tk.Canvas = tk.Canvas(self.__window, bg='black', height=h - 110, width=w, borderwidth=0, highlightthickness=0)
         self.__center_cnv.pack(fill=tk.X, expand=tk.TRUE)
-        self.__bottom_lbl: tk.Label = tk.Label(self.__window, text="Ready\n\n", bg="black", fg="orange", justify=tk.LEFT)
+        self.__bottom_lbl: tk.Label = tk.Label(self.__window, text="Ready\n\n", bg='black', fg='orange', justify=tk.LEFT)
         self.__bottom_lbl.config(font=(self.__default_font_name, 16))
         self.__bottom_lbl.pack(ipadx=4, padx=4, anchor=tk.S, side=tk.LEFT)
         self.__clock: TkClock = TkClock(self.__window, seconds=False, colon=True)
-        self.__clock.config(font=(self.__default_font_name, 16), bg="black", fg="orange")
+        self.__clock.config(font=(self.__default_font_name, 16), bg='black', fg='orange')
         self.__clock.pack(ipadx=4, padx=4)
         with open(self._config.get_root_path() + os.sep + 'images' + os.sep + 'background.jpg', 'rb') as fp:
             image: Image = Image.open(io.BytesIO(fp.read()))
@@ -109,7 +114,7 @@ class MediaPlayerInterfaceImpl(MediaPlayerInterface, CanvasGridListener):
         self.__window.update()
         self.__cnv_grid = CanvasGrid(MediaPlayerInterfaceImpl.__logger, self.__window, self.__center_cnv, executor)
         self.__cnv_grid.set_listener(self)
-        self.__view: tk.Frame= tk.Frame(self.__window, bg="black", height=h, width=w, borderwidth=0, highlightthickness=0)
+        self.__view: tk.Frame = tk.Frame(self.__window, bg="black", height=h, width=w, borderwidth=0, highlightthickness=0)
         self.__view['background'] = 'black'
         self.__view.bind('<Control-q>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_POWER), e))
         self.__view.bind('<Escape>', lambda e: self.send_control_event(RemoteControlEvent(media_api.CODE_BACK), e))

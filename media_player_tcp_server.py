@@ -34,56 +34,55 @@ class _TcpHandler(socketserver.BaseRequestHandler):
         return socketserver.BaseRequestHandler.setup(self)
 
     def handle(self):
-        self.request.settimeout(15)
+        self.request.settimeout(2)
         self.request.setblocking(True)
         while self.__controller.is_running():
             response: bytes = b''
-            if self.__controller.is_running():
-                try:
-                    packet: bytearray = self.__pending_data + self.request.recv(512)
-                    if not packet:
-                        return
-                    length: int = len(packet)
-                    if length == 0:
-                        return
-                    data: bytearray = bytearray()
-                    for i, val in enumerate(packet):
-                        if val == 0x0A and i > 1 and packet[i - 1] == 0x0D:
-                            data.extend(packet[0:i - 1])
-                            self.__pending_data.clear()
-                            self.__pending_data.extend(packet[i + 1:])
-                            break
-                    if len(data) == 0:
-                        return
-                    self.__logger.debug('Event received from {}: {}'.format(self.client_address[0], data))
-                    code: int
-                    event: RemoteControlEvent = RemoteControlEvent(data[0])
-                    if len(data) > 1:
-                        event.set_data(data[1:].decode('ascii'))
-                    elif 0x20 <= data[0] <= 0x7E:  # A valid ASCII character
-                        event.set_data(data.decode('ascii'))
-                    self.__logger.debug('Dispatching event: %s', event)
-                    if self.__controller.get_listener():
-                        response = self.__controller.get_listener().on_control_event(event)
-                    else:
-                        self.__logger.warning('Event not processed')
-                        response = media_api.RESPONSE_NACK
-                except socket.timeout:
-                    self.__logger.warning('Client connection timeout')
+            try:
+                packet: bytearray = self.__pending_data + self.request.recv(128)
+                if not packet:
                     return
-                except ConnectionResetError:
-                    self.__logger.warning('Client connection closed')
+                length: int = len(packet)
+                if length == 0:
                     return
-                except Exception as ex:
-                    self.__logger.error('Error: %s' % ex)
-                    exc_type, exc_value, exc_traceback = sys.exc_info()
-                    traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
-                    self.__logger.error(ex)
+                data: bytearray = bytearray()
+                for i, val in enumerate(packet):
+                    if val == 0x0A and i > 1 and packet[i - 1] == 0x0D:
+                        data.extend(packet[0:i - 1])
+                        self.__pending_data.clear()
+                        self.__pending_data.extend(packet[i + 1:])
+                        break
+                if len(data) == 0:
+                    return
+                self.__logger.debug('Control event received from {}: {}'.format(self.client_address[0], data))
+                code: int
+                event: RemoteControlEvent = RemoteControlEvent(data[0])
+                if len(data) > 1:
+                    event.set_data(data[1:].decode('ascii'))
+                elif 0x20 <= data[0] <= 0x7E:  # A valid ASCII character
+                    event.set_data(data.decode('ascii'))
+                if self.__controller.get_listener():
+                    self.__logger.debug('Dispatching control event: %s', event)
+                    response = self.__controller.get_listener().on_control_event(event)
+                else:
+                    self.__logger.warning('No listener, control event not processed')
                     response = media_api.RESPONSE_NACK
-                if not response and len(response) == 0:
-                    response = media_api.RESPONSE_NACK
-                self.__logger.debug('Sending response: %s', response)
-                self.request.send(response)
+            except socket.timeout:
+                self.__logger.warning('Client connection timeout')
+                return
+            except ConnectionResetError:
+                self.__logger.warning('Client connection closed')
+                return
+            except Exception as ex:
+                self.__logger.error('Error: %s' % ex)
+                exc_type, exc_value, exc_traceback = sys.exc_info()
+                traceback.print_tb(exc_traceback, limit=6, file=sys.stderr)
+                self.__logger.error(ex)
+                response = media_api.RESPONSE_NACK
+            if not response and len(response) == 0:
+                response = media_api.RESPONSE_NACK
+            self.__logger.debug('Sending response: %s', response)
+            self.request.send(response)
 
 
 class _TcpServer(socketserver.TCPServer):

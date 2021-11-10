@@ -7,11 +7,10 @@ import datetime
 import json
 import logging
 import os
-import sys
 import time
 import traceback
 import requests
-from typing import Any, Dict
+from typing import Any, Dict, List
 from PIL import Image
 from canvas_grid import CanvasGridRenderer
 from media_api import MediaPlayerInterface, Media
@@ -36,6 +35,18 @@ _FREEBOX_CHANNEL_DESCRIPTION_PATTTERN: str = _HTTP_PREFIX + _FREEBOX_HOST + '/ap
 _THUMBNAIL_MIN_COLORS: int = 15
 _THUMBNAIL_TRIES: int = 3
 _UTF8: str = 'utf8'
+_IMAGE_URL_PROPERTY: str = 'image_url'
+_NAME_KEY: str = 'name'
+_LOGO_URL_KEY: str = 'logo_url'
+_FILTERS_KEY: str = 'filters'
+_DATE_KEY: str = 'date'
+_RESULT_KEY: str = 'result'
+_TITLE_KEY: str = 'title'
+_DURATION_KEY: str = 'duration'
+_PICTURE_KEY: str = 'picture'
+_PICTURE_BIG_KEY: str = 'picture_big'
+_FLAVOUR_PARAM: bytes = b'flavour'
+_SERVICE_PARAM: bytes = b'service'
 
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
 os.environ["OPENCV_LOG_LEVEL"] = "OFF"
@@ -53,96 +64,64 @@ class FreeboxMediaCellRenderer(CanvasGridRenderer):
                 FreeboxMediaCellRenderer.__logger.addHandler(handler)
             FreeboxMediaCellRenderer.__logger.setLevel(parent_logger.level)
         self.__config: MediaPlayerConfig = config
-        self.__enabled: bool = True
         cv2.setLogLevel(0)
-
-    def set_enabled(self, flag: bool) -> None:
-        self.__enabled = flag
-
-    def is_enabled(self) -> bool:
-        return self.__enabled
 
     def render_image(self, value: Any) -> Image:
         if not isinstance(value, Media):
             return None
         media: Media = value
-        if media.get_stream_url():
+        # noinspection PyTypeChecker
+        result: Image = None
+        # Loading media image if not already done
+        if media.get_image() is None and _IMAGE_URL_PROPERTY in media.get_properties():
+            url: str = media.get_properties()[_IMAGE_URL_PROPERTY]
+            FreeboxMediaCellRenderer.__logger.debug('Loading media image for: %s from url: %s', media.get_name(), url)
+            # noinspection PyBroadException
+            try:
+                with requests.get(url, stream=True, timeout=0.5) as binary_response:
+                    media.set_image(Image.open(binary_response.raw))
+            except:  # catch all
+                FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
+                # noinspection PyTypeChecker
+                media.set_image(None)
+        # Loading media title
+        epoch_time: int = int(time.time())
+        url: str = _FREEBOX_CHANNEL_DESCRIPTION_PATTTERN % (media.get_stream_id(), str(epoch_time))
+        FreeboxMediaCellRenderer.__logger.debug('Loading media information for: %s from url: %s', media.get_name(), url)
+        # noinspection PyBroadException
+        try:
+            with requests.get(url, stream=False, timeout=0.5) as json_response:
+                results = list()
+                for k, v in  json_response.json()[_RESULT_KEY].items():
+                    if _DATE_KEY in v:
+                        results.append(v)
+                results.sort(key=lambda d: d[_DATE_KEY])
             # noinspection PyTypeChecker
-            result: Image = None
-            url: str = media.get_stream_url()
-            FreeboxMediaCellRenderer.__logger.debug('Rendering image at: %s', url)
-            if 'flavour=' in url:
-                url = url.replace('flavour=hd', 'flavour=sd')
-            if self.__enabled:
-                colors: int = 0
-                tries = 0
-                while colors < _THUMBNAIL_MIN_COLORS and tries < _THUMBNAIL_TRIES:
-                    tries = tries + 1
-                    cap = cv2.VideoCapture(url)
-                    # noinspection PyBroadException
-                    try:
-                        ret, frame = cap.read()
-                        image: Image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                        image_w, image_h = image.size
-                        if image_w > 512 and image_h > 512:
-                            image.thumbnail((512, 512), Image.ANTIALIAS)
-                        by_color = {}
-                        colors = 0
-                        for pixel in image.getdata():
-                            if pixel not in by_color:
-                                by_color[pixel] = True
-                                colors = colors + 1
-                            if colors >= _THUMBNAIL_MIN_COLORS:
-                                result = image
-                                break
-                        time.sleep(0.1)
-                    except:  # catch all
-                        time.sleep(0.2)
-                        if tries >= _THUMBNAIL_TRIES:
-                            FreeboxMediaCellRenderer.__logger.warning('Unexpected error: %s', sys.exc_info()[0])
-                    finally:
-                        if cap:
-                            cap.release()
-            if result is None:
-                if media.get_image():
-                    result = media.get_image()
-                elif media.get_image_url():
-                    # noinspection PyTypeChecker
-                    binary_response: requests.Response = None
-                    # noinspection PyBroadException
-                    try:
-                        binary_response = requests.get(media.get_image_url(), stream=True, timeout=0.2)
-                        media.set_image(Image.open(binary_response.raw))
-                        result = media.get_image()
-                    except:  # catch all
-                        FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
-                    finally:
-                        if binary_response:
-                            binary_response.close()
-            else:
-                url: str = _FREEBOX_CHANNEL_DESCRIPTION_PATTTERN % (media.get_stream_id(), str(int(time.time())))
-                # Loading media title
-                # noinspection PyBroadException
-                try:
-                    json_response = requests.get(url, stream=False, timeout=0.2)
-                    data = json_response.json()['result']
-                    for k, v in data.items():
-                        if 'title' in v:
-                            media.set_title(v['title'])
-                            if 'duration' in v:
-                                media.set_duration(v['duration'])
-                            break
-                except:  # catch all
-                    FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
-                    # noinspection PyTypeChecker
-                    media.set_title(None)
-                    # noinspection PyTypeChecker
-                    media.set_duration(None)
-                finally:
-                    if json_response:
-                        json_response.close()
-            return result
-        return None
+            result: dict = None
+            for v in results:
+                if v[_DATE_KEY] <= epoch_time:
+                    result = v
+                else:
+                    break
+            if result and _TITLE_KEY in result:
+                media.set_title(result[_TITLE_KEY])
+                if _DURATION_KEY in result:
+                    media.set_duration(result[_DURATION_KEY])
+                if _PICTURE_BIG_KEY in result:
+                    with requests.get(_HTTP_PREFIX + _FREEBOX_HOST + result[_PICTURE_BIG_KEY], stream=True, timeout=0.5) as binary_response:
+                        result = Image.open(binary_response.raw)
+                elif _PICTURE_KEY in result:
+                    with requests.get(_HTTP_PREFIX + _FREEBOX_HOST + result[_PICTURE_KEY], stream=True, timeout=0.5) as binary_response:
+                        result = Image.open(binary_response.raw)
+        except:  # catch all
+            FreeboxMediaCellRenderer.__logger.error(traceback.format_exc())
+            # noinspection PyTypeChecker
+            media.set_title(None)
+            # noinspection PyTypeChecker
+            media.set_duration(None)
+        if result is None:
+            result = media.get_image()
+        return result
 
 
 class FreeboxMediaSource(VlcMediaSource):
@@ -161,6 +140,9 @@ class FreeboxMediaSource(VlcMediaSource):
         self.__freebox_config: Dict[str, Any] = None
         # noinspection PyTypeChecker
         self.__media_cell_renderer: FreeboxMediaCellRenderer = FreeboxMediaCellRenderer(parent_logger, config)
+        self.__load_freebox_config()
+        self.__build_media_list()
+        self._media_list.sort(key=lambda v: v.get_channel())
 
     def get_name(self) -> str:
         """
@@ -176,36 +158,17 @@ class FreeboxMediaSource(VlcMediaSource):
         if self._instance and self._interface and not self.is_playing():
             self._interface.refresh()
         if self._instance:
-            self._executor.schedule(30, self.refresh_interface)
+            self._executor.schedule(60, self.refresh_interface)
 
     def open(self) -> None:
         super().open()
         # noinspection PyTypeChecker
-        self.__media_cell_renderer.set_enabled(False)
         self._interface.set_cell_renderer(self.__media_cell_renderer)
-        if not self.__freebox_config:
-            self.__load_freebox_config()
-        if len(self._media_list) == 0:
-            self.__build_media_list()
-            self._media_list.sort(key=lambda v: v.get_channel())
         position: int = 0
         for media in self._media_list:
             self._interface.add_grid_cell(position=position, value=media, render=False)
             position = position + 1
-        self._executor.schedule(2, self.__media_cell_renderer.set_enabled, True)
         self._executor.schedule(3, self.refresh_interface)
-
-    def close(self) -> None:
-        self.__media_cell_renderer.set_enabled(False)
-        super().close()
-
-    def play(self, media: Media = None, channel: int = -1) -> None:
-        self.__media_cell_renderer.set_enabled(False)
-        super().play(media=media, channel=channel)
-
-    def stop(self):
-        super().stop()
-        self.__media_cell_renderer.set_enabled(True)
 
     def __load_freebox_config(self) -> None:
         path: str = self.get_config().get_root_path() + os.sep + 'freebox_media_source.json'
@@ -218,8 +181,8 @@ class FreeboxMediaSource(VlcMediaSource):
                 fp.write('{\n}')
             self.__freebox_config = dict()
         if 'filters' not in self.__freebox_config:
-            self.__freebox_config['filters'] = list()
-        FreeboxMediaSource.__logger.info(str(len(self.__freebox_config['filters'])) + ' filters loaded')
+            self.__freebox_config[_FILTERS_KEY] = list()
+        FreeboxMediaSource.__logger.info(str(len(self.__freebox_config[_FILTERS_KEY])) + ' filters loaded')
 
     def __build_media_list(self) -> None:
         """
@@ -232,45 +195,52 @@ class FreeboxMediaSource(VlcMediaSource):
         if self.__last_retrieval:
             expiration = self.__last_retrieval + datetime.timedelta(minutes=5)
         if expiration is None or expiration < now:
-            FreeboxMediaSource.__logger.debug('Retrieving media list from: %s', _FREEBOX_STREAMS)
+            FreeboxMediaSource.__logger.debug('Retrieving media list from: %s', _FREEBOX_CHANNELS)
             media_list: dict = dict()
-            with requests.get(_FREEBOX_CHANNELS, timeout=0.2) as response:
-                data = response.json()['result']
-                for k, v in data.items():
-                    if 'name' not in v or v['name'] in self.__freebox_config['filters']:
-                        continue
-                    media: Media = Media(name=v['name'])
-                    if 'logo_url' in v:
-                        media.set_image_url(_HTTP_PREFIX + _FREEBOX_HOST + v['logo_url'])
-                    media_list[media.get_name()] = media
-            with requests.get(_FREEBOX_STREAMS, timeout=0.2) as response:
-                for line in response.text.splitlines():
-                    line = line.strip()
-                    if len(line) == 0 or line.startswith('#EXTM3U') or '&flavour=ld' in line:
-                        continue
-                    if line.startswith('#EXTINF:'):
-                        inf = line.split(' - ')
-                        position = int(inf[0].split(',')[1])
-                        name = inf[1]
-                        if '(' in name:
-                            name = name.split('(')[0]
-                        name = name.strip()
-                    elif name not in self.__freebox_config['filters']:
-                        url = urllib.parse.urlparse(line.encode(_UTF8))
-                        url_parameters = urllib.parse.parse_qs(url.query)
-                        uuid = url_parameters[b'service'][0].decode(_UTF8)
-                        flavour = None
-                        if b'flavour' in url_parameters:
-                            flavour = url_parameters[b'flavour'][0].decode(_UTF8)
-                        if name in media_list:
-                            media: Media = media_list[name]
-                            media.set_channel(position)
-                            if media.get_stream_id() is None:
-                                FreeboxMediaSource.__logger.debug('Adding media to the list: %s', media)
-                                if position >= len(self._media_list):
-                                    self._media_list.append(media)
-                                else:
-                                    self._media_list.insert(position, media)
-                            if flavour is None or media.get_stream_url() is None:
-                                media.set_stream_url(line)
-                                media.set_stream_id(uuid)
+            with requests.get(_FREEBOX_CHANNELS, timeout=0.5) as response:
+                data = response.json()[_RESULT_KEY]
+            for k, v in data.items():
+                if _NAME_KEY not in v or v[_NAME_KEY] in self.__freebox_config[_FILTERS_KEY]:
+                    continue
+                media: Media = Media(name=v[_NAME_KEY])
+                if _LOGO_URL_KEY in v:
+                    media.get_properties()[_IMAGE_URL_PROPERTY] = _HTTP_PREFIX + _FREEBOX_HOST + v[_LOGO_URL_KEY]
+                media_list[media.get_name()] = media
+            # noinspection PyTypeChecker
+            lines: List[str] = None
+            # noinspection PyTypeChecker
+            name: str = None
+            position: int = 0
+            FreeboxMediaSource.__logger.debug('Retrieving streams list from: %s', _FREEBOX_STREAMS)
+            with requests.get(_FREEBOX_STREAMS, timeout=0.5) as response:
+                lines = response.text.splitlines()
+            for line in lines:
+                line = line.strip()
+                if len(line) == 0 or line.startswith('#EXTM3U') or '&flavour=ld' in line:
+                    continue
+                if line.startswith('#EXTINF:'):
+                    inf = line.split(' - ')
+                    position = int(inf[0].split(',')[1])
+                    name = inf[1]
+                    if '(' in name:
+                        name = name.split('(')[0]
+                    name = name.strip()
+                elif name not in self.__freebox_config[_FILTERS_KEY]:
+                    url = urllib.parse.urlparse(line.encode(_UTF8))
+                    url_parameters = urllib.parse.parse_qs(url.query)
+                    uuid = url_parameters[_SERVICE_PARAM][0].decode(_UTF8)
+                    flavour = None
+                    if _FLAVOUR_PARAM in url_parameters:
+                        flavour = url_parameters[_FLAVOUR_PARAM][0].decode(_UTF8)
+                    if name in media_list:
+                        media: Media = media_list[name]
+                        media.set_channel(position)
+                        if media.get_stream_id() is None:
+                            FreeboxMediaSource.__logger.debug('Adding media to the list: %s', media)
+                            if position >= len(self._media_list):
+                                self._media_list.append(media)
+                            else:
+                                self._media_list.insert(position, media)
+                        if flavour is None or media.get_stream_url() is None:
+                            media.set_stream_url(line)
+                            media.set_stream_id(uuid)

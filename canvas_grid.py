@@ -1,6 +1,5 @@
 # -*- coding: utf-*-
 # grid of images in a canvas object
-import datetime
 import logging
 import threading
 import tkinter as tk
@@ -16,10 +15,11 @@ DEFAULT_CELL_WIDTH: int = 384
 DEFAULT_CELL_HEIGHT: int = 216
 DEFAULT_SELECTION_BORDER_WIDTH: int = 2
 DEFAULT_SELECTION_BORDER_COLOR: str = 'white'
-_AVAILABLE_CELLS: str = 'Available cells: '
+_AVAILABLE_CELLS_MSG: str = 'Available cells: %s'
 _PREVENT_EVENT_PROPAGATION: str = 'break'
-_ROW_OUT_OF_BOUNDS: str = 'Row is out of bounds: '
-_UNEXPECTED_ERROR: str = 'Unexpected error: '
+_ROW_OUT_OF_BOUNDS_MSG: str = 'Row is out of bounds: %s'
+_UNEXPECTED_ERROR_MSG: str = 'Unexpected error: %s'
+_INITIALIZING_MSG: str = 'Initializing %s'
 
 
 class PadKey(Enum):
@@ -37,9 +37,6 @@ class ImageEntry(object):
         self.__image: Image = image
         # PhotoImage must be referenced to avoid removal of its reference by the garbage collector
         self.__image_tk: ImageTk.PhotoImage = image_tk
-        self.__updating: bool = False
-        # noinspection PyTypeChecker
-        self.__last_update: datetime.datetime = None
 
     def get_image(self) -> Image:
         return self.__image
@@ -50,12 +47,6 @@ class ImageEntry(object):
     def get_tk_id(self) -> Any:
         return self.__tk_id
 
-    def is_updating(self) -> bool:
-        return self.__updating
-
-    def get_last_update(self) -> datetime.datetime:
-        return self.__last_update
-
     def set_image(self, value: Image) -> None:
         self.__image = value
 
@@ -64,12 +55,6 @@ class ImageEntry(object):
 
     def set_tk_id(self, value: Any) -> None:
         self.__tk_id = value
-
-    def set_updating(self, flag: bool) -> None:
-        self.__updating = flag
-
-    def set_last_update(self, date: datetime.datetime) -> None:
-        self.__last_update = date
 
 
 class CanvasGridCell(object):
@@ -129,6 +114,7 @@ class CanvasGridCell(object):
 
 
 class CanvasGridListener(ABC):
+
     @abstractmethod
     def on_cell_validation(self, grid, cell: CanvasGridCell) -> None:
         pass
@@ -147,7 +133,7 @@ class DefaultCanvasGridListener(CanvasGridListener):
             for handler in parent_logger.handlers:
                 DefaultCanvasGridListener.__logger.addHandler(handler)
             DefaultCanvasGridListener.__logger.setLevel(parent_logger.level)
-        DefaultCanvasGridListener.__logger.info('Initializing %s', self.__class__.__name__)
+        DefaultCanvasGridListener.__logger.info(_INITIALIZING_MSG, self.__class__.__name__)
 
     def on_cell_validation(self, grid, cell: CanvasGridCell) -> None:
         DefaultCanvasGridListener.__logger.debug('Cell validation: %s', cell)
@@ -165,7 +151,7 @@ class CanvasGridRenderer(ABC):
             for handler in parent_logger.handlers:
                 CanvasGridRenderer.__logger.addHandler(handler)
             CanvasGridRenderer.__logger.setLevel(parent_logger.level)
-        CanvasGridRenderer.__logger.info('Initializing %s', self.__class__.__name__)
+        CanvasGridRenderer.__logger.info(_INITIALIZING_MSG, self.__class__.__name__)
         self.__font: ImageFont = ImageFont.load_default()
         self._background_color: str = 'black'
         self._border_color: str = 'lightgrey'
@@ -184,11 +170,26 @@ class CanvasGridRenderer(ABC):
         image.putalpha(alpha)
         return image
 
+    @staticmethod
+    def __update_cell_image(canvas: tk.Canvas, cell: CanvasGridCell, image):
+        CanvasGrid.free_image(canvas, cell)
+        if not cell.get_image_entry():
+            cell.set_image_entry(ImageEntry(image=image))
+        else:
+            cell.get_image_entry().set_image(image)
+        entry: ImageEntry = cell.get_image_entry()
+        if entry.get_image():
+            image_tk: ImageTk.PhotoImage = ImageTk.PhotoImage(image=entry.get_image())
+            # PhotoImage reference is kept to avoid removal by the garbage collector
+            entry.set_image_tk(image_tk)
+            entry.set_tk_id(canvas.create_image(cell.get_x(), cell.get_y(), image=image_tk, anchor=tk.NW))
+        else:
+            CanvasGridRenderer.__logger.warning('No image for cell: %s', cell)
+
     def render_cell(self, grid, cell: CanvasGridCell, cell_width: int, cell_height: int, render_image: bool = True) -> None:
         # noinspection PyBroadException
         try:
-            image_entry: ImageEntry = cell.get_image_entry()
-            if render_image or image_entry is None or image_entry.get_image() is None:
+            if render_image:
                 image: Image = None
                 if render_image:
                     image = self.render_image(cell.get_value())
@@ -199,7 +200,10 @@ class CanvasGridRenderer(ABC):
                     image_w, image_h = image.size
                     if image_w > cell_width or image_h > cell_height:
                         image.thumbnail((cell_width, cell_height), Image.ANTIALIAS)
-                        # unused: image = image.crop((0, 0, cell_width, cell_height))
+                        # unused image = image.crop((0, 0, cell_width, cell_height))
+                    elif cell_width / 3 < image_w < cell_width and cell_height / 3 < image_h < cell_height:
+                        image = image.resize((cell_width, cell_height))
+                        #unused image = image.crop((0, 0, cell_width, cell_height))
                     # Put the image on the center of the background image of the cell
                     image_w, image_h = image.size
                     cell_image_w, cell_image_h = result.size
@@ -214,14 +218,9 @@ class CanvasGridRenderer(ABC):
                                        outline=self._border_color, width=1)
                 # Round corners
                 CanvasGridRenderer.__add_corners(result, 8)
+                grid.get_canvas().after(1, CanvasGridRenderer.__update_cell_image, grid.get_canvas(), cell, result)
             else:
-                result = image_entry.get_image()
-            if result:
-                grid.get_canvas().after(50, grid.update_cell_image, cell, result)
-            else:
-                cell.get_image_entry().set_updating(False)
                 CanvasGridRenderer.__logger.warning('Invalid image to update on canvas for cell: %s', cell)
-            cell.get_image_entry().set_last_update(datetime.datetime.now())
         except:  # catch all
             CanvasGridRenderer.__logger.error(traceback.format_exc())
 
@@ -280,7 +279,7 @@ class CanvasGrid(object):
             for handler in parent_logger.handlers:
                 CanvasGrid.__logger.addHandler(handler)
             CanvasGrid.__logger.setLevel(parent_logger.level)
-        CanvasGrid.__logger.info('Initializing %s', self.__class__.__name__)
+        CanvasGrid.__logger.info(_INITIALIZING_MSG, self.__class__.__name__)
         # Locks
         self.__cells_lock: threading.RLock = threading.RLock()
         self.__selection_lock: threading.RLock = threading.RLock()
@@ -382,28 +381,6 @@ class CanvasGrid(object):
     def get_tk(self) -> tk.Tk:
         return self.__window
 
-    def update_cell_image(self, cell: CanvasGridCell, image):
-        CanvasGrid.free_image(self.__canvas, cell)
-        if not cell.get_image_entry():
-            cell.set_image_entry(ImageEntry(image=image))
-        else:
-            cell.get_image_entry().set_image(image)
-        entry: ImageEntry = cell.get_image_entry()
-        if entry.get_image():
-            image_tk: ImageTk.PhotoImage = ImageTk.PhotoImage(image=entry.get_image())
-            # PhotoImage reference is kept to avoid removal by the garbage collector
-            entry.set_image_tk(image_tk)
-            with self.__selection_lock:
-                entry.set_tk_id(self.__canvas.create_image(cell.get_x(), cell.get_y(), image=image_tk, anchor=tk.NW))
-                # Select the cell if no cell is currently selected
-                if self.get_selected_position() < 0:
-                    self.__select_position(0)
-            entry.set_updating(False)
-        else:
-            CanvasGrid.__logger.warning('No image for cell: %s', cell)
-        # unused:if self.__window:
-        # unused:    self.__canvas.after(50, self.__window.update)
-
     def redraw(self, cell: CanvasGridCell = None, first: int = -1) -> None:
         if not self.__executor.is_ready():
             return
@@ -427,8 +404,6 @@ class CanvasGrid(object):
             return
         if end < 0:
             end = cells_count
-        now: datetime.datetime = datetime.datetime.now()
-        time_limit: datetime.datetime = now - datetime.timedelta(seconds=20)
         for position in range(start, end + 1):
             cell: CanvasGridCell = self.__get_cell(position)
             if not cell:
@@ -436,17 +411,12 @@ class CanvasGrid(object):
                 continue
             if not cell.get_image_entry():
                 cell.set_image_entry(ImageEntry())
-            entry: ImageEntry = cell.get_image_entry()
-            if entry.is_updating() or (entry.get_last_update() and entry.get_last_update() > time_limit):
-                # Redraw skipped, cell updating or updated too recently
-                continue
             cell.set_row(int(position / self.__columns))
             cell.set_column(position % self.__columns)
             if cell.get_row() < self.__first_visible_row or cell.get_row() >= self.__first_visible_row + self.__rows:
                 cell.set_coordinates(-self.__cell_width, -self.__cell_height)
                 # Redraw skipped, cell is outside the visible area
                 continue
-            entry.set_updating(True)
             cell.set_coordinates(
                 self.__margin_x + self.__padding + cell.get_column() * (self.__cell_width + self.__padding),
                 self.__margin_y + self.__padding + (cell.get_row() - self.__first_visible_row) * (
@@ -595,14 +565,14 @@ class CanvasGrid(object):
 
     def __clear_row(self, row: int):
         if row < 0:
-            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS + str(row))
+            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS_MSG, str(row))
             return
         cells_count: int = self.get_size()
         real_columns: int = min(cells_count, self.__columns)
         first_position: int = row * real_columns
         last_row: int = int(cells_count / real_columns) - 1
         if row > last_row:
-            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS + str(row) + '/' + str(last_row))
+            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS_MSG, str(row) + '/' + str(last_row))
             return
         last_visible_row: int = self.__first_visible_row + self.__rows - 1
         if row < self.__first_visible_row or row > last_visible_row:
@@ -618,16 +588,16 @@ class CanvasGrid(object):
 
     def __scroll_to(self, row: int) -> None:
         if row < 0:
-            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS + str(row))
+            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS_MSG, str(row))
             return
         cells_count: int = self.get_size()
         real_columns: int = min(cells_count, self.__columns)
         last_row: int = int(cells_count / real_columns) - 1
         if row > last_row:
-            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS + str(row) + '/' + str(last_row))
+            CanvasGrid.__logger.debug(_ROW_OUT_OF_BOUNDS_MSG, str(row) + '/' + str(last_row))
             return
         CanvasGrid.__logger.debug('Scrolling from first visible row: %s to %s', self.__first_visible_row, row)
-        CanvasGrid.__logger.debug(_AVAILABLE_CELLS + str(cells_count))
+        CanvasGrid.__logger.debug(_AVAILABLE_CELLS_MSG, str(cells_count))
         CanvasGrid.__logger.debug('Clearing rows')
         # Delete images associated to the visible cells and unbind events on cells
         for visible_row in range(self.__first_visible_row, self.__first_visible_row + self.__rows):
@@ -646,16 +616,14 @@ class CanvasGrid(object):
             CanvasGrid.free_image(self.__canvas, cell)
             if position == self.get_selected_position() and position >= self.get_size() - 1:
                 self.__select_position(position - 1)
-            CanvasGrid.__logger.debug(_AVAILABLE_CELLS + str(self.get_size()))
+            CanvasGrid.__logger.debug(_AVAILABLE_CELLS_MSG, str(self.get_size()))
             self.redraw(first=position)
             return cell
 
     def clear(self):
         with self.__cells_lock:
-            cells_count: int = len(self.__cells)
-            while cells_count > 0:
-                self.delete_cell(cells_count - 1)
-                cells_count = cells_count - 1
+            self.__canvas.delete("all")
+            self.__cells.clear()
             self.redraw()
 
     def add_cell(self, position: int = -1, label: str = None, value: Any = None) -> CanvasGridCell:
@@ -670,7 +638,7 @@ class CanvasGrid(object):
                 CanvasGrid.__logger.debug('Adding cell at specified position: %s', position)
                 while len(self.__cells) <= position:
                     self.__cells.append(CanvasGridCell())
-            CanvasGrid.__logger.debug(_AVAILABLE_CELLS + str(len(self.__cells)))
+            CanvasGrid.__logger.debug(_AVAILABLE_CELLS_MSG, str(len(self.__cells)))
             cell = self.__cells[position]
         if not label:
             label = 'Cell ' + str(position)
@@ -679,4 +647,6 @@ class CanvasGrid(object):
             cell.set_value(value)
         CanvasGrid.__logger.debug('Cell added: %s', cell)
         self.redraw(cell=cell)
+        if self.__selected_position < 0:
+            self.select_cell(cell)
         return cell

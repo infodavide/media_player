@@ -2,7 +2,6 @@
 # Web browser Media definition
 import json
 import logging
-import time
 import tkinter as tk
 import media_api
 import os
